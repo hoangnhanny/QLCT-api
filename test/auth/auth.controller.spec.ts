@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { AuthController } from '../../src/auth/auth.controller';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 
@@ -28,9 +29,11 @@ describe('AuthController', () => {
 
     expect(result).toEqual({
       id: '123e4567-e89b-12d3-a456-426614174000',
+      email: null,
       displayName: 'Nguyễn Văn A',
       avatarUrl: 'https://example.com/avatar.jpg',
       createdAt: mockProfile.created_at,
+      updatedAt: null,
     });
     expect(queryMock).toHaveBeenCalledWith(expect.any(String), [
       '123e4567-e89b-12d3-a456-426614174000',
@@ -46,9 +49,48 @@ describe('AuthController', () => {
 
     expect(result).toEqual({
       id: '123e4567-e89b-12d3-a456-426614174000',
+      email: null,
       displayName: null,
       avatarUrl: null,
       createdAt: null,
+      updatedAt: null,
     });
+  });
+
+  it('registers user and saves to both auth.users and public.profiles tables', async () => {
+    const mockCreated = {
+      user_id: '123e4567-e89b-12d3-a456-426614174000',
+      display_name: 'Google User',
+      avatar_url: 'https://lh3.googleusercontent.com/avatar.jpg',
+      created_at: new Date('2026-01-01'),
+    };
+    // First query for auth.users, second query for public.profiles
+    queryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [mockCreated] });
+
+    const result = await controller.register({
+      id: '123e4567-e89b-12d3-a456-426614174000',
+      email: 'user@gmail.com',
+      displayName: 'Google User',
+      avatarUrl: 'https://lh3.googleusercontent.com/avatar.jpg',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.profile).toEqual({
+      id: '123e4567-e89b-12d3-a456-426614174000',
+      email: 'user@gmail.com',
+      displayName: 'Google User',
+      avatarUrl: 'https://lh3.googleusercontent.com/avatar.jpg',
+      createdAt: mockCreated.created_at,
+      updatedAt: expect.any(Date),
+    });
+    expect(queryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws BadRequestException if user id is missing on register', async () => {
+    await expect(
+      controller.register({ id: '', email: 'test@example.com' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

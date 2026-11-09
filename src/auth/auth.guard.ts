@@ -84,14 +84,17 @@ export class AuthGuard implements CanActivate {
     }
 
     await this.supabase.db.query(
-      `insert into public.profiles (user_id, display_name, avatar_url)
-       values ($1, $2, $3)
+      `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
+       values ($1, $2, $3, $4, now())
        on conflict (user_id) do update set
+         email = coalesce(excluded.email, public.profiles.email),
          display_name = excluded.display_name,
-         avatar_url = excluded.avatar_url
+         avatar_url = excluded.avatar_url,
+         updated_at = now()
        where public.profiles.display_name is distinct from excluded.display_name
-          or public.profiles.avatar_url is distinct from excluded.avatar_url`,
-      [userId, displayName, avatarUrl],
+          or public.profiles.avatar_url is distinct from excluded.avatar_url
+          or public.profiles.email is distinct from excluded.email`,
+      [userId, email, displayName, avatarUrl],
     );
   }
 }

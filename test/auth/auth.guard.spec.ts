@@ -43,7 +43,7 @@ describe('AuthGuard', () => {
     expect(request.user).toEqual({ id: 'user-1' });
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('profiles'),
-      ['user-1', 'Test User', 'https://example.com/avatar.jpg'],
+      ['user-1', 'test@example.com', 'Test User', 'https://example.com/avatar.jpg'],
     );
   });
 

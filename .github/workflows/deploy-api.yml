@@ -81,9 +81,7 @@ jobs:
   build:
     name: Build API
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -103,22 +101,8 @@ jobs:
       - name: Build
         run: yarn build
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 3.0.0
-
-      - name: Start local Supabase and apply migrations
-        run: supabase start
-
       - name: Test
-        run: yarn test
-
-      - name: Stop local Supabase
-        if: always()
-        run: |
-          if command -v supabase >/dev/null 2>&1; then
-            supabase stop --no-backup || true
-          fi
+        run: yarn test:unit
 
   migrate:
     name: Migrate production Supabase

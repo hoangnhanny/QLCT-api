@@ -33,7 +33,7 @@ supabase/         # Supabase CLI config and migrations
 
 ## Deployment
 
-- **CI**: Pull requests and pushes to `main` affecting API or Supabase files run type checking, lint, build, and tests. Tests use local Supabase, never the production database.
+- **CI**: Pull requests and pushes to `main` affecting API or Supabase files run type checking, lint, build, and unit tests without requiring a local Supabase instance.
 - **Migrations**: On a push to `main`, production migrations run only when that push changes `supabase/migrations/**`. Only pending migrations are applied, after CI succeeds.
 - **Render**: CI triggers deployment of the tested commit after migrations succeed, or after CI when there are no migration changes. HTTP errors fail the deploy job; a successful trigger does not mean the Render deployment has finished.
 

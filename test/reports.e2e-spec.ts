@@ -94,7 +94,9 @@ describe('Reports & Attachments (e2e)', () => {
 
     // Image view URL
     await request(app.getHttpServer())
-      .get(`/ledgers/${ledgerId}/expenses/00000000-0000-0000-0000-000000000000/image`)
+      .get(
+        `/ledgers/${ledgerId}/expenses/00000000-0000-0000-0000-000000000000/image`,
+      )
       .set(auth(outsiderToken))
       .expect(403);
   });

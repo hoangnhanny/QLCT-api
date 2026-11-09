@@ -42,14 +42,28 @@ describe('AttachmentsService', () => {
 
   describe('createUploadUrl', () => {
     it('creates upload url for image/jpeg, image/png, image/webp', async () => {
-      const resJpeg = await service.createUploadUrl('ledger-1', 'user-1', 'image/jpeg');
+      const resJpeg = await service.createUploadUrl(
+        'ledger-1',
+        'user-1',
+        'image/jpeg',
+      );
       expect(resJpeg.path).toMatch(/^ledger-1\/[a-f0-9-]+\.jpg$/);
-      expect(resJpeg.uploadUrl).toBe('https://storage.example.com/upload-signed-url');
+      expect(resJpeg.uploadUrl).toBe(
+        'https://storage.example.com/upload-signed-url',
+      );
 
-      const resPng = await service.createUploadUrl('ledger-1', 'user-1', 'image/png');
+      const resPng = await service.createUploadUrl(
+        'ledger-1',
+        'user-1',
+        'image/png',
+      );
       expect(resPng.path).toMatch(/^ledger-1\/[a-f0-9-]+\.png$/);
 
-      const resWebp = await service.createUploadUrl('ledger-1', 'user-1', 'image/webp');
+      const resWebp = await service.createUploadUrl(
+        'ledger-1',
+        'user-1',
+        'image/webp',
+      );
       expect(resWebp.path).toMatch(/^ledger-1\/[a-f0-9-]+\.webp$/);
     });
 
@@ -72,7 +86,10 @@ describe('AttachmentsService', () => {
 
       const res = await service.createViewUrl('ledger-1', 'exp-1');
       expect(res.url).toBe('https://storage.example.com/view-signed-url');
-      expect(mockStorage.createSignedUrl).toHaveBeenCalledWith('ledger-1/receipt.jpg', 300);
+      expect(mockStorage.createSignedUrl).toHaveBeenCalledWith(
+        'ledger-1/receipt.jpg',
+        300,
+      );
     });
 
     it('throws NotFoundException if expense has no image_path', async () => {
@@ -80,17 +97,17 @@ describe('AttachmentsService', () => {
         rows: [{ image_path: null }],
       });
 
-      await expect(service.createViewUrl('ledger-1', 'exp-no-img')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.createViewUrl('ledger-1', 'exp-no-img'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('throws NotFoundException if expense does not exist', async () => {
       mockDb.query.mockResolvedValue({ rows: [] });
 
-      await expect(service.createViewUrl('ledger-1', 'exp-non-existent')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.createViewUrl('ledger-1', 'exp-non-existent'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

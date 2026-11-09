@@ -4,10 +4,7 @@
  * - 80 is reached when spent * 100 >= limit * 80
  * - 100 is reached when spent >= limit (both [80, 100] are returned)
  */
-export function reachedThresholds(
-  spent: number,
-  limit: number,
-): (80 | 100)[] {
+export function reachedThresholds(spent: number, limit: number): (80 | 100)[] {
   if (limit <= 0) {
     return [];
   }

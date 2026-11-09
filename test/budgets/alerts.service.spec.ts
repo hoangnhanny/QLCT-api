@@ -20,7 +20,10 @@ describe('AlertsService', () => {
       send: jest.fn().mockResolvedValue(undefined),
     };
 
-    service = new AlertsService(mockSupabaseService, mockPushService as PushService);
+    service = new AlertsService(
+      mockSupabaseService,
+      mockPushService as PushService,
+    );
   });
 
   it('evaluates budgets and sends alert when threshold reached (80%)', async () => {
@@ -33,7 +36,10 @@ describe('AlertsService', () => {
       if (sql.includes('SELECT admin_id FROM public.ledgers')) {
         return Promise.resolve({ rows: [{ admin_id: 'admin-1' }] });
       }
-      if (sql.includes('SELECT * FROM public.budgets') || sql.includes('FROM public.budgets')) {
+      if (
+        sql.includes('SELECT * FROM public.budgets') ||
+        sql.includes('FROM public.budgets')
+      ) {
         return Promise.resolve({
           rows: [
             {
@@ -52,7 +58,10 @@ describe('AlertsService', () => {
           rows: [{ user_id: 'admin-1' }, { user_id: 'member-2' }],
         });
       }
-      if (sql.includes('SUM(amount)') || sql.includes('SELECT coalesce(sum(amount)')) {
+      if (
+        sql.includes('SUM(amount)') ||
+        sql.includes('SELECT coalesce(sum(amount)')
+      ) {
         return Promise.resolve({
           rows: [{ spent: '850000' }], // 85% of 1,000,000
         });
@@ -134,7 +143,11 @@ describe('AlertsService', () => {
       }
       if (sql.includes('SELECT user_id FROM public.members')) {
         return Promise.resolve({
-          rows: [{ user_id: 'admin-1' }, { user_id: 'member-2' }, { user_id: 'member-3' }],
+          rows: [
+            { user_id: 'admin-1' },
+            { user_id: 'member-2' },
+            { user_id: 'member-3' },
+          ],
         });
       }
       if (sql.includes('sum(amount)')) {

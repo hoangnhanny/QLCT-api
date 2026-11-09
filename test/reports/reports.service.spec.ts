@@ -26,16 +26,18 @@ describe('ReportsService', () => {
         if (sql.includes('GROUP BY e.category_id')) {
           return Promise.resolve({
             rows: [
-              { category_id: 'cat-food', category_name: 'Ăn uống', total: '200000' },
+              {
+                category_id: 'cat-food',
+                category_name: 'Ăn uống',
+                total: '200000',
+              },
               { category_id: null, category_name: null, total: '150000' },
             ],
           });
         }
         if (sql.includes('GROUP BY e.created_by')) {
           return Promise.resolve({
-            rows: [
-              { user_id: 'u-1', display_name: 'User 1', total: '350000' },
-            ],
+            rows: [{ user_id: 'u-1', display_name: 'User 1', total: '350000' }],
           });
         }
         if (sql.includes('GROUP BY to_char(')) {
@@ -129,7 +131,12 @@ describe('ReportsService', () => {
         ],
       });
 
-      const res = await service.range('ledger-1', '2026-11-01', '2026-11-10', 'day');
+      const res = await service.range(
+        'ledger-1',
+        '2026-11-01',
+        '2026-11-10',
+        'day',
+      );
       expect(res).toEqual([
         { bucket: '2026-11-01', total: 100000 },
         { bucket: '2026-11-02', total: 150000 },

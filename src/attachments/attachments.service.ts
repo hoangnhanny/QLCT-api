@@ -30,8 +30,8 @@ export class AttachmentsService {
       contentType === 'image/jpeg'
         ? 'jpg'
         : contentType === 'image/png'
-        ? 'png'
-        : 'webp';
+          ? 'png'
+          : 'webp';
 
     const filename = `${randomUUID()}.${ext}`;
     const path = `${ledgerId}/${filename}`;

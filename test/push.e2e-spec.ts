@@ -87,7 +87,8 @@ describe('Push (e2e)', () => {
       .send({
         endpoint: 'https://push.example.com/sub/user-device-1',
         keys: {
-          p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9t0484TagBEQZs6zSmSzGWqZGhizxOW2Elvj5080Ap2Ot8',
+          p256dh:
+            'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9t0484TagBEQZs6zSmSzGWqZGhizxOW2Elvj5080Ap2Ot8',
           auth: 'tBHItJI5svbpez7KI4CCXg',
         },
       })
@@ -99,7 +100,9 @@ describe('Push (e2e)', () => {
       [userId],
     );
     expect(dbRes.rows).toHaveLength(1);
-    expect(dbRes.rows[0].endpoint).toBe('https://push.example.com/sub/user-device-1');
+    expect(dbRes.rows[0].endpoint).toBe(
+      'https://push.example.com/sub/user-device-1',
+    );
 
     // 2. Subscribe same endpoint again -> upsert, still 1 row
     await request(app.getHttpServer())
@@ -108,7 +111,8 @@ describe('Push (e2e)', () => {
       .send({
         endpoint: 'https://push.example.com/sub/user-device-1',
         keys: {
-          p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9t0484TagBEQZs6zSmSzGWqZGhizxOW2Elvj5080Ap2Ot8',
+          p256dh:
+            'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9t0484TagBEQZs6zSmSzGWqZGhizxOW2Elvj5080Ap2Ot8',
           auth: 'new-auth-key',
         },
       })

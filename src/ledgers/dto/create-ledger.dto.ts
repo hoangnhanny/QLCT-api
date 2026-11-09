@@ -1,4 +1,10 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import { LedgerKind } from '../ledgers.types';
 
 export class CreateLedgerDto {

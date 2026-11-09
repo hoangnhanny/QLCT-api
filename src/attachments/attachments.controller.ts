@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -32,10 +25,7 @@ export class AttachmentsController {
   }
 
   @Get('expenses/:id/image')
-  createViewUrl(
-    @Param('ledgerId') ledgerId: string,
-    @Param('id') id: string,
-  ) {
+  createViewUrl(@Param('ledgerId') ledgerId: string, @Param('id') id: string) {
     return this.attachmentsService.createViewUrl(ledgerId, id);
   }
 }

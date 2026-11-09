@@ -46,7 +46,12 @@ describe('PushService', () => {
 
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.stringContaining('ON CONFLICT (endpoint) DO UPDATE'),
-        ['user-1', 'https://push.example.com/sub/123', 'p256dh-key', 'auth-secret'],
+        [
+          'user-1',
+          'https://push.example.com/sub/123',
+          'p256dh-key',
+          'auth-secret',
+        ],
       );
     });
   });
@@ -67,7 +72,10 @@ describe('PushService', () => {
   describe('send', () => {
     it('send delivers to all subscriptions of listed users', async () => {
       mockDb.query.mockImplementation((sql: string) => {
-        if (sql.includes('SELECT') && sql.includes('FROM public.push_subscriptions')) {
+        if (
+          sql.includes('SELECT') &&
+          sql.includes('FROM public.push_subscriptions')
+        ) {
           return Promise.resolve({
             rows: [
               {
@@ -114,7 +122,10 @@ describe('PushService', () => {
 
     it('410 response deletes the subscription', async () => {
       mockDb.query.mockImplementation((sql: string) => {
-        if (sql.includes('SELECT') && sql.includes('FROM public.push_subscriptions')) {
+        if (
+          sql.includes('SELECT') &&
+          sql.includes('FROM public.push_subscriptions')
+        ) {
           return Promise.resolve({
             rows: [
               {
@@ -144,14 +155,19 @@ describe('PushService', () => {
       });
 
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM public.push_subscriptions WHERE endpoint = $1'),
+        expect.stringContaining(
+          'DELETE FROM public.push_subscriptions WHERE endpoint = $1',
+        ),
         ['https://push.example.com/expired-410'],
       );
     });
 
     it('404 response deletes the subscription', async () => {
       mockDb.query.mockImplementation((sql: string) => {
-        if (sql.includes('SELECT') && sql.includes('FROM public.push_subscriptions')) {
+        if (
+          sql.includes('SELECT') &&
+          sql.includes('FROM public.push_subscriptions')
+        ) {
           return Promise.resolve({
             rows: [
               {
@@ -181,7 +197,9 @@ describe('PushService', () => {
       });
 
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM public.push_subscriptions WHERE endpoint = $1'),
+        expect.stringContaining(
+          'DELETE FROM public.push_subscriptions WHERE endpoint = $1',
+        ),
         ['https://push.example.com/notfound-404'],
       );
     });

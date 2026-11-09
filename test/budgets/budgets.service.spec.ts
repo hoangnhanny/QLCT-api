@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { BudgetsService } from '../../src/budgets/budgets.service';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 

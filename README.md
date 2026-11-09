@@ -39,13 +39,13 @@ supabase/         # Supabase CLI config and migrations
 
 Configure these GitHub Actions repository secrets:
 
-| Secret                  | Purpose                               |
-| ----------------------- | ------------------------------------- |
-| `SUPABASE_ACCESS_TOKEN` | Supabase account token for the CLI    |
-| `SUPABASE_PROJECT_REF`  | Production Supabase project reference |
-| `SUPABASE_DB_PASSWORD`  | Production database password          |
-| `RENDER_API_KEY`        | Render API token                      |
-| `RENDER_SERVICE_ID`     | Render backend service ID             |
+| Secret                  | Purpose                                                        | Example / Default |
+| ----------------------- | -------------------------------------------------------------- | ----------------- |
+| `SUPABASE_ACCESS_TOKEN` | Supabase personal access token (`sbp_...`) for CLI             | [Create token](https://supabase.com/dashboard/account/tokens) |
+| `SUPABASE_PROJECT_REF`  | Production Supabase project reference                          | `adetfttrkukiwzhjpqld` |
+| `SUPABASE_DB_PASSWORD`  | Production database password                                   | Your DB password  |
+| `RENDER_API_KEY`        | Render API token                                               | Render account API key |
+| `RENDER_SERVICE_ID`     | Render backend service ID                                      | `srv-...`         |
 
 Disable **Auto-Deploy** on Render so it cannot deploy before CI and migrations finish. Keep backend runtime secrets configured on Render, not in frontend environment files. Use backward-compatible migrations because the old backend remains live while migrations run, and add new migration files rather than editing migrations already applied to production.
 

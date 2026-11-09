@@ -1,6 +1,12 @@
 name: Deploy API to Render
 
 on:
+  workflow_dispatch:
+    inputs:
+      force_migrate:
+        description: 'Force run Supabase migrations'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -40,7 +46,7 @@ concurrency:
 jobs:
   changes:
     name: Detect migration changes
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       migrations: ${{ steps.diff.outputs.migrations }}
@@ -55,12 +61,17 @@ jobs:
         env:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
+          FORCE_MIGRATE: ${{ inputs.force_migrate }}
         run: |
-          base="$BEFORE"
-          if [[ "$base" == "0000000000000000000000000000000000000000" ]]; then
-            base="$(git hash-object -t tree /dev/null)"
+          if [[ "$FORCE_MIGRATE" == "true" ]]; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          changed_files="$(git diff --name-only "$base" "$AFTER" -- supabase/migrations/)"
+          base="$BEFORE"
+          if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
+            base="HEAD~1"
+          fi
+          changed_files="$(git diff --name-only "$base" "$AFTER" -- supabase/migrations/ 2>/dev/null || true)"
           if [[ -n "$changed_files" ]]; then
             echo "migrations=true" >> "$GITHUB_OUTPUT"
           else
@@ -112,13 +123,13 @@ jobs:
   migrate:
     name: Migrate production Supabase
     needs: [build, changes]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.migrations == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'adetfttrkukiwzhjpqld' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -133,20 +144,20 @@ jobs:
           : "${SUPABASE_PROJECT_REF:?Missing SUPABASE_PROJECT_REF secret}"
 
       - name: Link production project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Check pending migrations
-        run: supabase db push --remote --dry-run
+        run: supabase db push --remote --password "$SUPABASE_DB_PASSWORD" --dry-run
 
       - name: Apply pending migrations
-        run: supabase db push --remote --yes
+        run: supabase db push --remote --password "$SUPABASE_DB_PASSWORD" --yes
 
   deploy:
     name: Deploy to Render
     runs-on: ubuntu-latest
     needs: [build, changes, migrate]
     if: >-
-      ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' &&
           needs.build.result == 'success' && needs.changes.result == 'success' &&
           (needs.migrate.result == 'success' ||
            (needs.migrate.result == 'skipped' && needs.changes.outputs.migrations == 'false')) }}

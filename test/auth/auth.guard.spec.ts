@@ -1,55 +1,16 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { createServer, Server } from 'node:http';
-import { AddressInfo } from 'node:net';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { SignJWT } from 'jose';
 import { AuthGuard } from '../../src/auth/auth.guard';
 import { DEFAULT_LOCAL_JWT_SECRET } from '../../src/auth/jwt-secret';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 
 describe('AuthGuard', () => {
-  let server: Server;
-  let supabaseUrl: string;
-  let keys: Awaited<ReturnType<typeof generateKeyPair>>;
-  const originalUrl = process.env.SUPABASE_URL;
-  const originalSecret = process.env.SUPABASE_JWT_SECRET;
   const query = jest.fn().mockResolvedValue({ rows: [] });
   const supabase = { db: { query } } as unknown as SupabaseService;
 
-  beforeAll(async () => {
-    keys = await generateKeyPair('ES256');
-    const publicKey = await exportJWK(keys.publicKey);
-    server = createServer((request, response) => {
-      if (request.url !== '/auth/v1/.well-known/jwks.json') {
-        response.writeHead(404).end();
-        return;
-      }
-      response.setHeader('Content-Type', 'application/json');
-      response.end(
-        JSON.stringify({
-          keys: [{ ...publicKey, kid: 'test-key', alg: 'ES256', use: 'sig' }],
-        }),
-      );
-    });
-    await new Promise<void>((resolve) =>
-      server.listen(0, '127.0.0.1', resolve),
-    );
-    supabaseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  });
-
   beforeEach(() => {
     query.mockClear();
-    process.env.SUPABASE_URL = supabaseUrl;
-    process.env.SUPABASE_JWT_SECRET = DEFAULT_LOCAL_JWT_SECRET;
-  });
-
-  afterAll(async () => {
-    if (originalUrl === undefined) delete process.env.SUPABASE_URL;
-    else process.env.SUPABASE_URL = originalUrl;
-    if (originalSecret === undefined) delete process.env.SUPABASE_JWT_SECRET;
-    else process.env.SUPABASE_JWT_SECRET = originalSecret;
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
+    process.env.JWT_SECRET = DEFAULT_LOCAL_JWT_SECRET;
   });
 
   function requestContext(token?: string) {
@@ -63,73 +24,73 @@ describe('AuthGuard', () => {
     return { request, context };
   }
 
-  function esToken() {
-    return new SignJWT({ user_metadata: { full_name: 'Test User' } })
-      .setProtectedHeader({ alg: 'ES256', kid: 'test-key' })
-      .setSubject('user-1')
-      .setIssuer(`${supabaseUrl}/auth/v1`)
-      .setAudience('authenticated')
-      .setExpirationTime('5m');
+  function createToken(sub = 'user-1', secret = DEFAULT_LOCAL_JWT_SECRET) {
+    return new SignJWT({
+      user_metadata: { full_name: 'Test User', avatar_url: 'https://example.com/avatar.jpg' },
+      email: 'test@example.com',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(sub)
+      .setExpirationTime('5m')
+      .sign(new TextEncoder().encode(secret));
   }
 
-  it('accepts a valid Supabase ES256 token using its JWKS', async () => {
-    const token = await esToken().sign(keys.privateKey);
+  it('accepts a valid HS256 JWT token', async () => {
+    const token = await createToken('user-1');
     const { request, context } = requestContext(token);
 
-    await expect(new AuthGuard(supabase).canActivate(context)).resolves.toBe(
-      true,
-    );
+    await expect(new AuthGuard(supabase).canActivate(context)).resolves.toBe(true);
     expect(request.user).toEqual({ id: 'user-1' });
-    expect(query).toHaveBeenCalledWith(expect.any(String), [
-      'user-1',
-      'Test User',
-      null,
-    ]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('profiles'),
+      ['user-1', 'Test User', 'https://example.com/avatar.jpg'],
+    );
   });
 
-  it('continues accepting legacy HS256 tokens', async () => {
+  it('rejects an expired token', async () => {
     const token = await new SignJWT({})
       .setProtectedHeader({ alg: 'HS256' })
-      .setSubject('legacy-user')
-      .setExpirationTime('5m')
+      .setSubject('user-1')
+      .setExpirationTime(1)
       .sign(new TextEncoder().encode(DEFAULT_LOCAL_JWT_SECRET));
-    const { request, context } = requestContext(token);
+    const { context } = requestContext(token);
 
-    await expect(new AuthGuard(supabase).canActivate(context)).resolves.toBe(
-      true,
+    await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
     );
-    expect(request.user).toEqual({ id: 'legacy-user' });
+    expect(query).not.toHaveBeenCalled();
   });
 
-  it.each(['expired', 'wrong issuer', 'wrong audience', 'wrong signature'])(
-    'rejects an ES256 token with %s',
-    async (failure) => {
-      const builder = esToken();
-      if (failure === 'expired') builder.setExpirationTime(1);
-      if (failure === 'wrong issuer')
-        builder.setIssuer('https://other.example/auth/v1');
-      if (failure === 'wrong audience') builder.setAudience('other');
-      const privateKey =
-        failure === 'wrong signature'
-          ? (await generateKeyPair('ES256')).privateKey
-          : keys.privateKey;
-      const { context } = requestContext(await builder.sign(privateKey));
+  it('rejects a token signed with the wrong secret', async () => {
+    const token = await createToken('user-1', 'completely-wrong-secret-key-32-chars-long');
+    const { context } = requestContext(token);
 
-      await expect(
-        new AuthGuard(supabase).canActivate(context),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(query).not.toHaveBeenCalled();
-    },
-  );
+    await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(query).not.toHaveBeenCalled();
+  });
 
-  it.each([undefined, 'not-a-jwt'])(
-    'rejects a missing or malformed token: %s',
-    async (token) => {
+  it('rejects a missing or malformed token', async () => {
+    for (const token of [undefined, 'not-a-jwt']) {
       const { context } = requestContext(token);
-      await expect(
-        new AuthGuard(supabase).canActivate(context),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
       expect(query).not.toHaveBeenCalled();
-    },
-  );
+    }
+  });
+
+  it('rejects a token with an empty subject', async () => {
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject('')
+      .setExpirationTime('5m')
+      .sign(new TextEncoder().encode(DEFAULT_LOCAL_JWT_SECRET));
+    const { context } = requestContext(token);
+
+    await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
 });

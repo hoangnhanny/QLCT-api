@@ -4,32 +4,22 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
+import { jwtVerify } from 'jose';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthenticatedUser } from './authenticated-user';
 import { getJwtSecret } from './jwt-secret';
 
 /**
- * Verifies Supabase ES256 tokens with JWKS and legacy HS256 tokens with
- * `SUPABASE_JWT_SECRET`.
+ * Verifies JWT tokens with application `JWT_SECRET`.
  * On success, sets `request.user = { id: <sub> }` and upserts the caller's
  * `profiles` row from the token's `user_metadata`.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly secret: Uint8Array;
-  private readonly issuer: string;
-  private readonly jwks: ReturnType<typeof createRemoteJWKSet>;
 
   constructor(private readonly supabase: SupabaseService) {
     this.secret = getJwtSecret();
-    const supabaseUrl = (
-      process.env.SUPABASE_URL || 'http://127.0.0.1:54321'
-    ).replace(/\/$/, '');
-    this.issuer = `${supabaseUrl}/auth/v1`;
-    this.jwks = createRemoteJWKSet(
-      new URL(`${this.issuer}/.well-known/jwks.json`),
-    );
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -41,17 +31,9 @@ export class AuthGuard implements CanActivate {
 
     let payload: Record<string, unknown>;
     try {
-      const { alg } = decodeProtectedHeader(token);
-      const result =
-        alg === 'ES256'
-          ? await jwtVerify(token, this.jwks, {
-              algorithms: ['ES256'],
-              issuer: this.issuer,
-              audience: 'authenticated',
-            })
-          : await jwtVerify(token, this.secret, {
-              algorithms: ['HS256'],
-            });
+      const result = await jwtVerify(token, this.secret, {
+        algorithms: ['HS256'],
+      });
       payload = result.payload;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
@@ -83,6 +65,23 @@ export class AuthGuard implements CanActivate {
       (metadata.avatar_url as string | undefined) ??
       (payload.picture as string | undefined) ??
       null;
+    const email =
+      (payload.email as string | undefined) ??
+      (metadata.email as string | undefined) ??
+      null;
+
+    try {
+      await this.supabase.db.query(
+        `insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+         values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', coalesce($2, ''), '', now(), now(), now())
+         on conflict (id) do update set
+           email = coalesce(excluded.email, auth.users.email),
+           updated_at = now()`,
+        [userId, email],
+      );
+    } catch {
+      // In case auth.users table is not directly accessible or already managed
+    }
 
     await this.supabase.db.query(
       `insert into public.profiles (user_id, display_name, avatar_url)
@@ -98,9 +97,9 @@ export class AuthGuard implements CanActivate {
 }
 
 function extractBearerToken(authorizationHeader?: string): string | undefined {
-  if (!authorizationHeader?.startsWith('Bearer ')) {
+  if (!authorizationHeader) {
     return undefined;
   }
-  const token = authorizationHeader.slice('Bearer '.length).trim();
-  return token.length > 0 ? token : undefined;
+  const match = /^Bearer\s+(\S+)$/i.exec(authorizationHeader.trim());
+  return match?.[1];
 }

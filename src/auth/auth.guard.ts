@@ -2,12 +2,16 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { jwtVerify } from 'jose';
+import { DataSource, Repository } from 'typeorm';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthenticatedUser } from './authenticated-user';
 import { getJwtSecret } from './jwt-secret';
+import { Profile as ProfileEntity } from '../database/entities/profile.entity';
 
 /**
  * Verifies JWT tokens with application `JWT_SECRET`.
@@ -17,9 +21,26 @@ import { getJwtSecret } from './jwt-secret';
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly secret: Uint8Array;
+  private readonly legacyDb?: {
+    query: (sql: string, params?: any[]) => Promise<any>;
+  };
+  private readonly profileRepo?: Repository<ProfileEntity>;
+  private readonly dataSource?: DataSource;
 
-  constructor(private readonly supabase: SupabaseService) {
+  constructor(
+    @InjectRepository(ProfileEntity)
+    profileRepoOrSupabase: Repository<ProfileEntity> | SupabaseService | any,
+    @InjectDataSource()
+    @Optional()
+    dataSource?: DataSource,
+  ) {
     this.secret = getJwtSecret();
+    if (profileRepoOrSupabase?.db) {
+      this.legacyDb = profileRepoOrSupabase.db;
+    } else {
+      this.profileRepo = profileRepoOrSupabase as Repository<ProfileEntity>;
+      this.dataSource = dataSource;
+    }
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -74,46 +95,91 @@ export class AuthGuard implements CanActivate {
       (metadata.email as string | undefined) ??
       null;
 
-    try {
-      await this.supabase.db.query(
-        `insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
-         values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', coalesce($2, ''), '', now(), now(), now())
-         on conflict (id) do update set
-           email = coalesce(excluded.email, auth.users.email),
-           updated_at = now()`,
-        [userId, email],
-      );
-    } catch {
-      // In case auth.users table is not directly accessible or already managed
-    }
-
-    try {
-      await this.supabase.db.query(
-        `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
-         values ($1, $2, $3, $4, now())
-         on conflict (user_id) do update set
-           email = coalesce(excluded.email, public.profiles.email),
-           display_name = excluded.display_name,
-           avatar_url = excluded.avatar_url,
-           updated_at = now()
-         where public.profiles.display_name is distinct from excluded.display_name
-            or public.profiles.avatar_url is distinct from excluded.avatar_url
-            or public.profiles.email is distinct from excluded.email`,
-        [userId, email, displayName, avatarUrl],
-      );
-    } catch {
-      // Fallback query if migration 0004 has not run yet (legacy profiles schema)
+    if (this.legacyDb) {
       try {
-        await this.supabase.db.query(
-          `insert into public.profiles (user_id, display_name, avatar_url)
-           values ($1, $2, $3)
-           on conflict (user_id) do update set
-             display_name = excluded.display_name,
-             avatar_url = excluded.avatar_url`,
-          [userId, displayName, avatarUrl],
+        await this.legacyDb.query(
+          `insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+           values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', coalesce($2, ''), '', now(), now(), now())
+           on conflict (id) do update set
+             email = coalesce(excluded.email, auth.users.email),
+             updated_at = now()`,
+          [userId, email],
         );
       } catch {
-        // Silently ignore if profiles table has foreign key constraint issues
+        // In case auth.users table is not directly accessible or already managed
+      }
+
+      try {
+        await this.legacyDb.query(
+          `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
+           values ($1, $2, $3, $4, now())
+           on conflict (user_id) do update set
+             email = coalesce(excluded.email, public.profiles.email),
+             display_name = excluded.display_name,
+             avatar_url = excluded.avatar_url,
+             updated_at = now()
+           where public.profiles.display_name is distinct from excluded.display_name
+              or public.profiles.avatar_url is distinct from excluded.avatar_url
+              or public.profiles.email is distinct from excluded.email`,
+          [userId, email, displayName, avatarUrl],
+        );
+      } catch {
+        try {
+          await this.legacyDb.query(
+            `insert into public.profiles (user_id, display_name, avatar_url)
+             values ($1, $2, $3)
+             on conflict (user_id) do update set
+               display_name = excluded.display_name,
+               avatar_url = excluded.avatar_url`,
+            [userId, displayName, avatarUrl],
+          );
+        } catch {
+          // Silently ignore if profiles table has foreign key constraint issues
+        }
+      }
+      return;
+    }
+
+    if (this.dataSource) {
+      try {
+        await this.dataSource.query(
+          `insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+           values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', coalesce($2, ''), '', now(), now(), now())
+           on conflict (id) do update set
+             email = coalesce(excluded.email, auth.users.email),
+             updated_at = now()`,
+          [userId, email],
+        );
+      } catch {
+        // Ignore
+      }
+    }
+
+    let existing = await this.profileRepo!.findOne({ where: { userId } });
+    if (!existing) {
+      existing = this.profileRepo!.create({
+        userId,
+        email,
+        displayName,
+        avatarUrl,
+      });
+      await this.profileRepo!.save(existing);
+    } else {
+      let changed = false;
+      if (displayName && existing.displayName !== displayName) {
+        existing.displayName = displayName;
+        changed = true;
+      }
+      if (avatarUrl && existing.avatarUrl !== avatarUrl) {
+        existing.avatarUrl = avatarUrl;
+        changed = true;
+      }
+      if (email && existing.email !== email) {
+        existing.email = email;
+        changed = true;
+      }
+      if (changed) {
+        await this.profileRepo!.save(existing);
       }
     }
   }

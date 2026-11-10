@@ -1,3 +1,5 @@
+import { Expense as ExpenseEntity } from '../database/entities/expense.entity';
+
 export interface ExpenseCategory {
   id: string;
   name: string;
@@ -13,18 +15,29 @@ export interface ExpenseCreator {
 export interface ExpenseRow {
   type?: 'expense' | 'income';
   id: string;
-  ledger_id: string;
-  created_by: string;
+  ledger_id?: string;
+  ledgerId?: string;
+  created_by?: string;
+  createdBy?: string;
   amount: string | number | bigint;
   content: string;
-  category_id: string | null;
-  image_path: string | null;
-  spent_at: Date | string;
-  created_at: Date | string;
+  category_id?: string | null;
+  categoryId?: string | null;
+  image_path?: string | null;
+  imagePath?: string | null;
+  spent_at?: Date | string;
+  spentAt?: Date | string;
+  created_at?: Date | string;
+  createdAt?: Date | string;
   category_name?: string | null;
   category_icon?: string | null;
   creator_display_name?: string | null;
   creator_avatar_url?: string | null;
+  category?: { id: string; name: string; icon: string | null } | null;
+  creatorProfile?: {
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  } | null;
 }
 
 export interface Expense {
@@ -42,33 +55,69 @@ export interface Expense {
   creator?: ExpenseCreator | null;
 }
 
-export function mapExpense(row: ExpenseRow): Expense {
+export function mapExpense(row: ExpenseRow | ExpenseEntity): Expense {
+  const ledgerId = (
+    'ledgerId' in row && row.ledgerId ? row.ledgerId : (row as any).ledger_id
+  ) as string;
+  const createdBy = (
+    'createdBy' in row && row.createdBy
+      ? row.createdBy
+      : (row as any).created_by
+  ) as string;
+  const categoryId = (
+    'categoryId' in row ? row.categoryId : (row as any).category_id
+  ) as string | null;
+  const imagePath =
+    ('imagePath' in row ? row.imagePath : (row as any).image_path) ?? null;
+  const rawSpentAt = (
+    'spentAt' in row && row.spentAt ? row.spentAt : (row as any).spent_at
+  ) as Date | string;
+  const rawCreatedAt = (
+    'createdAt' in row && row.createdAt
+      ? row.createdAt
+      : (row as any).created_at
+  ) as Date | string;
+
+  const spentAt =
+    rawSpentAt instanceof Date ? rawSpentAt : new Date(rawSpentAt);
+  const createdAt =
+    rawCreatedAt instanceof Date ? rawCreatedAt : new Date(rawCreatedAt);
+
+  const categoryName =
+    (row as any).category?.name ?? (row as any).category_name ?? '';
+  const categoryIcon =
+    (row as any).category?.icon ?? (row as any).category_icon ?? null;
+  const displayName =
+    (row as any).creatorProfile?.displayName ??
+    (row as any).creator_display_name ??
+    null;
+  const avatarUrl =
+    (row as any).creatorProfile?.avatarUrl ??
+    (row as any).creator_avatar_url ??
+    null;
+
   return {
     type: row.type ?? 'expense',
     id: row.id,
-    ledgerId: row.ledger_id,
-    createdBy: row.created_by,
+    ledgerId,
+    createdBy,
     amount: Number(row.amount),
     content: row.content,
-    categoryId: row.category_id,
-    imagePath: row.image_path ?? null,
-    spentAt:
-      row.spent_at instanceof Date ? row.spent_at : new Date(row.spent_at),
-    createdAt:
-      row.created_at instanceof Date
-        ? row.created_at
-        : new Date(row.created_at),
-    category: row.category_id
+    categoryId,
+    imagePath,
+    spentAt,
+    createdAt,
+    category: categoryId
       ? {
-          id: row.category_id,
-          name: row.category_name ?? '',
-          icon: row.category_icon ?? null,
+          id: categoryId,
+          name: categoryName,
+          icon: categoryIcon,
         }
       : null,
     creator: {
-      id: row.created_by,
-      displayName: row.creator_display_name ?? null,
-      avatarUrl: row.creator_avatar_url ?? null,
+      id: createdBy,
+      displayName,
+      avatarUrl,
     },
   };
 }

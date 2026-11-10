@@ -4,19 +4,45 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { Ledger, LedgerRow, mapLedger } from '../ledgers/ledgers.types';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Ledger, mapLedger } from '../ledgers/ledgers.types';
 import { SupabaseService } from '../supabase/supabase.service';
 import { InviteRow } from './invites.types';
+import { Invite as InviteEntity } from '../database/entities/invite.entity';
+import { Ledger as LedgerEntity } from '../database/entities/ledger.entity';
+import { Member as MemberEntity } from '../database/entities/member.entity';
 
 const DEFAULT_TTL_DAYS = 7;
 
 @Injectable()
 export class InvitesService {
-  constructor(private readonly supabase: SupabaseService) {}
+  private readonly legacyDb?: {
+    query: (sql: string, params?: any[]) => Promise<any>;
+  };
+  private readonly inviteRepo?: Repository<InviteEntity>;
+  private readonly ledgerRepo?: Repository<LedgerEntity>;
+  private readonly memberRepo?: Repository<MemberEntity>;
 
-  private get db() {
-    return this.supabase.db;
+  constructor(
+    @InjectRepository(InviteEntity)
+    inviteRepoOrSupabase: Repository<InviteEntity> | SupabaseService | any,
+    @InjectRepository(LedgerEntity)
+    @Optional()
+    ledgerRepo?: Repository<LedgerEntity>,
+    @InjectRepository(MemberEntity)
+    @Optional()
+    memberRepo?: Repository<MemberEntity>,
+  ) {
+    if (inviteRepoOrSupabase?.db) {
+      this.legacyDb = inviteRepoOrSupabase.db;
+    } else {
+      this.inviteRepo = inviteRepoOrSupabase as Repository<InviteEntity>;
+      this.ledgerRepo = ledgerRepo;
+      this.memberRepo = memberRepo;
+    }
   }
 
   /** Creates a random, time-limited invite link for a ledger. Admin-only. */
@@ -28,14 +54,27 @@ export class InvitesService {
     await this.assertAdmin(ledgerId, adminId);
 
     const token = randomBytes(32).toString('base64url');
-    const result = await this.db.query<InviteRow>(
-      `insert into public.invites (ledger_id, token, expires_at, created_by)
-       values ($1, $2, now() + make_interval(days => $3), $4)
-       returning *`,
-      [ledgerId, token, ttlDays, adminId],
-    );
-    const row = result.rows[0];
-    return { id: row.id, token: row.token, expiresAt: row.expires_at };
+
+    if (this.legacyDb) {
+      const result = await this.legacyDb.query(
+        `insert into public.invites (ledger_id, token, expires_at, created_by)
+         values ($1, $2, now() + make_interval(days => $3), $4)
+         returning *`,
+        [ledgerId, token, ttlDays, adminId],
+      );
+      const row = result.rows[0];
+      return { id: row.id, token: row.token, expiresAt: row.expires_at };
+    }
+
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+    const invite = this.inviteRepo!.create({
+      ledgerId,
+      token,
+      expiresAt,
+      createdBy: adminId,
+    });
+    const saved = await this.inviteRepo!.save(invite);
+    return { id: saved.id, token: saved.token, expiresAt: saved.expiresAt };
   }
 
   /** Revokes an invite. Scoped by ledger so one ledger's admin cannot revoke another ledger's invite. */
@@ -46,13 +85,24 @@ export class InvitesService {
   ): Promise<void> {
     await this.assertAdmin(ledgerId, adminId);
 
-    const result = await this.db.query(
-      `update public.invites set revoked_at = now()
-       where id = $1 and ledger_id = $2
-       returning id`,
-      [inviteId, ledgerId],
+    if (this.legacyDb) {
+      const result = await this.legacyDb.query(
+        `update public.invites set revoked_at = now()
+         where id = $1 and ledger_id = $2
+         returning id`,
+        [inviteId, ledgerId],
+      );
+      if (result.rowCount === 0) {
+        throw new NotFoundException('Invite not found');
+      }
+      return;
+    }
+
+    const result = await this.inviteRepo!.update(
+      { id: inviteId, ledgerId },
+      { revokedAt: new Date() },
     );
-    if (result.rowCount === 0) {
+    if (result.affected === 0) {
       throw new NotFoundException('Invite not found');
     }
   }
@@ -60,7 +110,9 @@ export class InvitesService {
   /** Public preview of an invite: only the ledger name and kind, no ids. */
   async preview(token: string): Promise<{ ledgerName: string; kind: string }> {
     const invite = await this.getInviteOrThrow(token);
-    const ledger = await this.getLedgerOrThrow(invite.ledger_id);
+    const ledger = await this.getLedgerOrThrow(
+      invite.ledger_id ?? invite.ledgerId,
+    );
     return { ledgerName: ledger.name, kind: ledger.kind };
   }
 
@@ -71,46 +123,100 @@ export class InvitesService {
    */
   async accept(token: string, userId: string): Promise<Ledger> {
     const invite = await this.getInviteOrThrow(token);
+    const ledgerId = invite.ledger_id ?? invite.ledgerId;
 
-    await this.db.query(
-      `insert into public.members (ledger_id, user_id, status)
-       values ($1, $2, 'active')
-       on conflict (ledger_id, user_id) do update
-         set status = 'active'
-         where public.members.status = 'removed'`,
-      [invite.ledger_id, userId],
-    );
+    if (this.legacyDb) {
+      await this.legacyDb.query(
+        `insert into public.members (ledger_id, user_id, status)
+         values ($1, $2, 'active')
+         on conflict (ledger_id, user_id) do update
+           set status = 'active'
+           where public.members.status = 'removed'`,
+        [ledgerId, userId],
+      );
+    } else {
+      const existing = await this.memberRepo!.findOne({
+        where: { ledgerId, userId },
+      });
+      if (!existing) {
+        await this.memberRepo!.insert({
+          ledgerId,
+          userId,
+          status: 'active',
+        });
+      } else if (existing.status === 'removed') {
+        await this.memberRepo!.update(
+          { id: existing.id },
+          { status: 'active' },
+        );
+      }
+    }
 
-    return this.getLedgerOrThrow(invite.ledger_id);
+    return this.getLedgerOrThrow(ledgerId);
   }
 
-  private async getInviteOrThrow(token: string): Promise<InviteRow> {
-    const result = await this.db.query<InviteRow>(
-      `select * from public.invites where token = $1`,
-      [token],
-    );
-    const row = result.rows[0];
-    if (!row) {
+  private async getInviteOrThrow(
+    token: string,
+  ): Promise<InviteRow & { ledgerId?: string }> {
+    if (this.legacyDb) {
+      const result = await this.legacyDb.query(
+        `select * from public.invites where token = $1`,
+        [token],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        throw new NotFoundException('Không tìm thấy liên kết mời');
+      }
+      if (row.revoked_at) {
+        throw new GoneException('Liên kết mời đã bị thu hồi');
+      }
+      if (row.expires_at.getTime() < Date.now()) {
+        throw new GoneException('Liên kết mời đã hết hạn');
+      }
+      return row;
+    }
+
+    const invite = await this.inviteRepo!.findOne({ where: { token } });
+    if (!invite) {
       throw new NotFoundException('Không tìm thấy liên kết mời');
     }
-    if (row.revoked_at) {
+    if (invite.revokedAt) {
       throw new GoneException('Liên kết mời đã bị thu hồi');
     }
-    if (row.expires_at.getTime() < Date.now()) {
+    if (invite.expiresAt.getTime() < Date.now()) {
       throw new GoneException('Liên kết mời đã hết hạn');
     }
-    return row;
+    return {
+      id: invite.id,
+      ledger_id: invite.ledgerId,
+      ledgerId: invite.ledgerId,
+      token: invite.token,
+      expires_at: invite.expiresAt,
+      revoked_at: invite.revokedAt,
+      created_by: invite.createdBy,
+      created_at: invite.createdAt,
+    };
   }
 
   private async getLedgerOrThrow(ledgerId: string): Promise<Ledger> {
-    const result = await this.db.query<LedgerRow>(
-      `select * from public.ledgers where id = $1`,
-      [ledgerId],
-    );
-    if (result.rowCount === 0) {
+    if (this.legacyDb) {
+      const result = await this.legacyDb.query(
+        `select * from public.ledgers where id = $1`,
+        [ledgerId],
+      );
+      if (result.rowCount === 0) {
+        throw new NotFoundException('Ledger not found');
+      }
+      return mapLedger(result.rows[0]);
+    }
+
+    const ledger = await this.ledgerRepo!.findOne({
+      where: { id: ledgerId },
+    });
+    if (!ledger) {
       throw new NotFoundException('Ledger not found');
     }
-    return mapLedger(result.rows[0]);
+    return mapLedger(ledger);
   }
 
   private async assertAdmin(

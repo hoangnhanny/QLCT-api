@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 import * as webpush from 'web-push';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PushSubscription as PushSubscriptionEntity } from '../database/entities/push-subscription.entity';
 
 export interface PushPayload {
   title: string;
@@ -16,22 +19,24 @@ export interface PushSubscriptionItem {
   };
 }
 
-interface PushSubscriptionRow {
-  id: string;
-  user_id: string;
-  endpoint: string;
-  p256dh: string;
-  auth: string;
-}
-
 @Injectable()
 export class PushService implements OnModuleInit {
   private readonly logger = new Logger(PushService.name);
+  private readonly legacyDb?: {
+    query: (sql: string, params?: any[]) => Promise<any>;
+  };
+  private readonly pushRepo?: Repository<PushSubscriptionEntity>;
 
-  constructor(private readonly supabase: SupabaseService) {}
-
-  private get db() {
-    return this.supabase.db;
+  constructor(
+    @InjectRepository(PushSubscriptionEntity)
+    pushRepoOrSupabase:
+      Repository<PushSubscriptionEntity> | SupabaseService | any,
+  ) {
+    if (pushRepoOrSupabase?.db) {
+      this.legacyDb = pushRepoOrSupabase.db;
+    } else {
+      this.pushRepo = pushRepoOrSupabase as Repository<PushSubscriptionEntity>;
+    }
   }
 
   onModuleInit() {
@@ -60,9 +65,22 @@ export class PushService implements OnModuleInit {
    * Upserts a push subscription for the user by endpoint.
    */
   async subscribe(userId: string, sub: PushSubscriptionItem): Promise<void> {
-    await this.db.query(
-      `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth) VALUES ($1, $2, $3, $4) ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth`,
-      [userId, sub.endpoint, sub.keys.p256dh, sub.keys.auth],
+    if (this.legacyDb) {
+      await this.legacyDb.query(
+        `INSERT INTO public.push_subscriptions (user_id, endpoint, p256dh, auth) VALUES ($1, $2, $3, $4) ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth`,
+        [userId, sub.endpoint, sub.keys.p256dh, sub.keys.auth],
+      );
+      return;
+    }
+
+    await this.pushRepo!.upsert(
+      {
+        userId,
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+      },
+      ['endpoint'],
     );
   }
 
@@ -70,10 +88,15 @@ export class PushService implements OnModuleInit {
    * Removes a subscription by user and endpoint.
    */
   async unsubscribe(userId: string, endpoint: string): Promise<void> {
-    await this.db.query(
-      `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2`,
-      [userId, endpoint],
-    );
+    if (this.legacyDb) {
+      await this.legacyDb.query(
+        `DELETE FROM public.push_subscriptions WHERE user_id = $1 AND endpoint = $2`,
+        [userId, endpoint],
+      );
+      return;
+    }
+
+    await this.pushRepo!.delete({ userId, endpoint });
   }
 
   /**
@@ -85,12 +108,27 @@ export class PushService implements OnModuleInit {
       return;
     }
 
-    const res = await this.db.query<PushSubscriptionRow>(
-      `SELECT id, user_id, endpoint, p256dh, auth FROM public.push_subscriptions WHERE user_id = ANY($1::uuid[])`,
-      [userIds],
-    );
+    let subscriptions: Array<{
+      id: string;
+      user_id?: string;
+      userId?: string;
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+    }>;
 
-    const subscriptions = res.rows;
+    if (this.legacyDb) {
+      const res = await this.legacyDb.query(
+        `SELECT id, user_id, endpoint, p256dh, auth FROM public.push_subscriptions WHERE user_id = ANY($1::uuid[])`,
+        [userIds],
+      );
+      subscriptions = res.rows;
+    } else {
+      subscriptions = await this.pushRepo!.find({
+        where: { userId: In(userIds) },
+      });
+    }
+
     if (!subscriptions || subscriptions.length === 0) {
       return;
     }
@@ -118,12 +156,18 @@ export class PushService implements OnModuleInit {
             this.logger.warn(
               `Stale subscription returned ${statusCode}, deleting: ${sub.endpoint}`,
             );
-            await this.db
-              .query(
-                `DELETE FROM public.push_subscriptions WHERE endpoint = $1`,
-                [sub.endpoint],
-              )
-              .catch(() => {});
+            if (this.legacyDb) {
+              await this.legacyDb
+                .query(
+                  `DELETE FROM public.push_subscriptions WHERE endpoint = $1`,
+                  [sub.endpoint],
+                )
+                .catch(() => {});
+            } else {
+              await this.pushRepo!.delete({ endpoint: sub.endpoint }).catch(
+                () => {},
+              );
+            }
           } else {
             this.logger.error(
               `Error sending push notification to ${sub.endpoint}`,

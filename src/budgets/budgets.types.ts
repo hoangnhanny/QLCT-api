@@ -1,3 +1,5 @@
+import { Budget as BudgetEntity } from '../database/entities/budget.entity';
+
 export interface BudgetCategory {
   id: string;
   name: string;
@@ -12,16 +14,25 @@ export interface BudgetMember {
 
 export interface BudgetRow {
   id: string;
-  ledger_id: string;
-  member_user_id: string | null;
-  category_id: string | null;
+  ledger_id?: string;
+  ledgerId?: string;
+  member_user_id?: string | null;
+  memberUserId?: string | null;
+  category_id?: string | null;
+  categoryId?: string | null;
   month: Date | string;
   amount: string | number | bigint;
-  created_at: Date | string;
+  created_at?: Date | string;
+  createdAt?: Date | string;
   category_name?: string | null;
   category_icon?: string | null;
   member_display_name?: string | null;
   member_avatar_url?: string | null;
+  category?: { id: string; name: string; icon: string | null } | null;
+  memberProfile?: {
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  } | null;
 }
 
 export interface Budget {
@@ -49,30 +60,57 @@ export function formatMonthDate(dateOrStr: Date | string): string {
   return String(dateOrStr);
 }
 
-export function mapBudget(row: BudgetRow): Budget {
+export function mapBudget(row: BudgetRow | BudgetEntity): Budget {
+  const ledgerId = (
+    'ledgerId' in row && row.ledgerId ? row.ledgerId : (row as any).ledger_id
+  ) as string;
+  const memberUserId = (
+    'memberUserId' in row ? row.memberUserId : (row as any).member_user_id
+  ) as string | null;
+  const categoryId = (
+    'categoryId' in row ? row.categoryId : (row as any).category_id
+  ) as string | null;
+  const rawCreatedAt = (
+    'createdAt' in row && row.createdAt
+      ? row.createdAt
+      : (row as any).created_at
+  ) as Date | string;
+  const createdAt =
+    rawCreatedAt instanceof Date ? rawCreatedAt : new Date(rawCreatedAt);
+
+  const categoryName =
+    (row as any).category?.name ?? (row as any).category_name ?? '';
+  const categoryIcon =
+    (row as any).category?.icon ?? (row as any).category_icon ?? null;
+  const displayName =
+    (row as any).memberProfile?.displayName ??
+    (row as any).member_display_name ??
+    null;
+  const avatarUrl =
+    (row as any).memberProfile?.avatarUrl ??
+    (row as any).member_avatar_url ??
+    null;
+
   return {
     id: row.id,
-    ledgerId: row.ledger_id,
-    memberUserId: row.member_user_id,
-    categoryId: row.category_id,
+    ledgerId,
+    memberUserId,
+    categoryId,
     month: formatMonthDate(row.month),
     amount: Number(row.amount),
-    createdAt:
-      row.created_at instanceof Date
-        ? row.created_at
-        : new Date(row.created_at),
-    category: row.category_id
+    createdAt,
+    category: categoryId
       ? {
-          id: row.category_id,
-          name: row.category_name ?? '',
-          icon: row.category_icon ?? null,
+          id: categoryId,
+          name: categoryName,
+          icon: categoryIcon,
         }
       : null,
-    member: row.member_user_id
+    member: memberUserId
       ? {
-          id: row.member_user_id,
-          displayName: row.member_display_name ?? null,
-          avatarUrl: row.member_avatar_url ?? null,
+          id: memberUserId,
+          displayName,
+          avatarUrl,
         }
       : null,
   };

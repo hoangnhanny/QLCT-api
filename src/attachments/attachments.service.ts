@@ -2,16 +2,31 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
+import { Repository } from 'typeorm';
 import { SupabaseService } from '../supabase/supabase.service';
+import { Expense as ExpenseEntity } from '../database/entities/expense.entity';
 
 @Injectable()
 export class AttachmentsService {
-  constructor(private readonly supabase: SupabaseService) {}
+  private readonly legacyDb?: {
+    query: (sql: string, params?: any[]) => Promise<any>;
+  };
+  private readonly expenseRepo?: Repository<ExpenseEntity>;
 
-  private get db() {
-    return this.supabase.db;
+  constructor(
+    private readonly supabase: SupabaseService,
+    @InjectRepository(ExpenseEntity)
+    @Optional()
+    expenseRepo?: Repository<ExpenseEntity>,
+  ) {
+    if ((supabase as any)?.db) {
+      this.legacyDb = (supabase as any).db;
+    }
+    this.expenseRepo = expenseRepo;
   }
 
   async createUploadUrl(
@@ -53,23 +68,36 @@ export class AttachmentsService {
     ledgerId: string,
     expenseId: string,
   ): Promise<{ url: string }> {
-    const res = await this.db.query<{ image_path: string | null }>(
-      `SELECT image_path FROM public.expenses WHERE id = $1 AND ledger_id = $2`,
-      [expenseId, ledgerId],
-    );
+    let imagePath: string | null = null;
 
-    const expense = res.rows[0];
-    if (!expense) {
-      throw new NotFoundException('Expense not found');
+    if (this.legacyDb && !this.expenseRepo) {
+      const res = await this.legacyDb.query(
+        `SELECT image_path FROM public.expenses WHERE id = $1 AND ledger_id = $2`,
+        [expenseId, ledgerId],
+      );
+      const expense = res.rows[0];
+      if (!expense) {
+        throw new NotFoundException('Expense not found');
+      }
+      imagePath = expense.image_path;
+    } else {
+      const expense = await this.expenseRepo!.findOne({
+        where: { id: expenseId, ledgerId },
+        select: { imagePath: true },
+      });
+      if (!expense) {
+        throw new NotFoundException('Expense not found');
+      }
+      imagePath = expense.imagePath;
     }
 
-    if (!expense.image_path) {
+    if (!imagePath) {
       throw new NotFoundException('Expense has no image attachment');
     }
 
     const { data, error } = await this.supabase.client.storage
       .from('receipts')
-      .createSignedUrl(expense.image_path, 300);
+      .createSignedUrl(imagePath, 300);
 
     if (error || !data) {
       throw new BadRequestException(

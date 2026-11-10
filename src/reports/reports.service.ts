@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { formatMonthDate } from '../budgets/budgets.types';
 import { monthRange } from '../common/month';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -11,10 +13,31 @@ import {
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly supabase: SupabaseService) {}
+  private readonly legacyDb?: {
+    query: (sql: string, params?: any[]) => Promise<any>;
+  };
+  private readonly dataSource?: DataSource;
 
-  private get db() {
-    return this.supabase.db;
+  constructor(
+    @InjectDataSource()
+    dataSourceOrSupabase: DataSource | SupabaseService | any,
+  ) {
+    if (dataSourceOrSupabase?.db) {
+      this.legacyDb = dataSourceOrSupabase.db;
+    } else {
+      this.dataSource = dataSourceOrSupabase as DataSource;
+    }
+  }
+
+  private async executeQuery<T = any>(
+    sql: string,
+    params: any[] = [],
+  ): Promise<{ rows: T[] }> {
+    if (this.legacyDb) {
+      return this.legacyDb.query(sql, params);
+    }
+    const rows = await this.dataSource!.query(sql, params);
+    return { rows };
   }
 
   async monthly(
@@ -48,7 +71,7 @@ export class ReportsService {
     }
 
     // 1. Total spent
-    const totalRes = await this.db.query<{ total: string | number }>(
+    const totalRes = await this.executeQuery<{ total: string | number }>(
       `SELECT coalesce(sum(e.amount), 0) as total
        FROM public.expenses e
        WHERE ${filterConditions.join(' AND ')}`,
@@ -56,14 +79,14 @@ export class ReportsService {
     );
     const total = Number(totalRes.rows[0]?.total ?? 0);
 
-    const incomeRes = await this.db.query<{ income: string | number }>(
+    const incomeRes = await this.executeQuery<{ income: string | number }>(
       `SELECT coalesce(sum(e.amount), 0) as income FROM public.expenses e
        WHERE ${filterConditions.map((condition) => (condition === "e.type = 'expense'" ? "e.type = 'income'" : condition)).join(' AND ')}`,
       filterParams,
     );
     const income = Number(incomeRes.rows[0]?.income ?? 0);
 
-    // 2. byCategory (note: if filter.userId is present, apply it; if filter.categoryId is present, apply it)
+    // 2. byCategory
     const catConditions = [...baseConditions];
     const catParams = [...baseParams];
     if (filter?.userId) {
@@ -75,7 +98,7 @@ export class ReportsService {
       catConditions.push(`e.category_id = $${catParams.length}`);
     }
 
-    const byCatRes = await this.db.query<{
+    const byCatRes = await this.executeQuery<{
       category_id: string | null;
       category_name: string | null;
       total: string | number;
@@ -110,7 +133,7 @@ export class ReportsService {
       memConditions.push(`e.created_by = $${memParams.length}`);
     }
 
-    const byMemRes = await this.db.query<{
+    const byMemRes = await this.executeQuery<{
       user_id: string;
       display_name: string | null;
       total: string | number;
@@ -134,7 +157,7 @@ export class ReportsService {
     }));
 
     // 4. byDay (Asia/Ho_Chi_Minh)
-    const byDayRes = await this.db.query<{
+    const byDayRes = await this.executeQuery<{
       date: string;
       total: string | number;
     }>(
@@ -154,7 +177,7 @@ export class ReportsService {
     }));
 
     // 5. budgets status
-    const budgetsRes = await this.db.query<{
+    const budgetsRes = await this.executeQuery<{
       id: string;
       member_user_id: string | null;
       category_id: string | null;
@@ -183,7 +206,7 @@ export class ReportsService {
         bSql += ` AND category_id = $${bParams.length}`;
       }
 
-      const spentRes = await this.db.query<{ spent: string | number }>(
+      const spentRes = await this.executeQuery<{ spent: string | number }>(
         bSql,
         bParams,
       );
@@ -224,7 +247,7 @@ export class ReportsService {
     const validUnits = ['day', 'week', 'month'];
     const unit = validUnits.includes(groupBy) ? groupBy : 'day';
 
-    const res = await this.db.query<{
+    const res = await this.executeQuery<{
       bucket: string;
       total: string | number;
     }>(

@@ -82,6 +82,7 @@ describe('AuthController', () => {
       email: 'user@gmail.com',
       displayName: 'Google User',
       avatarUrl: 'https://lh3.googleusercontent.com/avatar.jpg',
+      authProviders: [],
       createdAt: mockCreated.created_at,
       updatedAt: expect.any(Date),
     });
@@ -129,6 +130,54 @@ describe('AuthController', () => {
       );
       expect(result.exists).toBe(false);
       expect(result.profile).toBeNull();
+    });
+
+    it('returns exists false when checking facebook provider on a google-only profile with the same email', async () => {
+      queryMock.mockResolvedValueOnce({
+        rows: [
+          {
+            user_id: 'google-user-uuid',
+            email: 'same@example.com',
+            display_name: 'Google User',
+            avatar_url: null,
+            auth_providers: ['google'],
+            created_at: new Date('2026-01-01'),
+            updated_at: new Date('2026-01-02'),
+          },
+        ],
+      });
+
+      const result = await controller.checkUser(
+        'facebook-user-uuid',
+        'same@example.com',
+        'facebook',
+      );
+      expect(result.exists).toBe(false);
+      expect(result.profile).toBeNull();
+    });
+
+    it('returns exists true when requested provider is in auth_providers', async () => {
+      queryMock.mockResolvedValueOnce({
+        rows: [
+          {
+            user_id: 'google-user-uuid',
+            email: 'same@example.com',
+            display_name: 'Google User',
+            avatar_url: null,
+            auth_providers: ['google', 'facebook'],
+            created_at: new Date('2026-01-01'),
+            updated_at: new Date('2026-01-02'),
+          },
+        ],
+      });
+
+      const result = await controller.checkUser(
+        'facebook-user-uuid',
+        'same@example.com',
+        'facebook',
+      );
+      expect(result.exists).toBe(true);
+      expect(result.profile?.id).toBe('google-user-uuid');
     });
   });
 });

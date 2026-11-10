@@ -8,8 +8,8 @@ NestJS backend for QLCT Family Expense Tracker.
 # Install dependencies
 yarn install
 
-# Environment variables
-cp .env.example .env.local
+# Environment variables (see ../docs/ENV_SETUP.md for how to obtain each value)
+cp .env.example .env
 
 # Run migrations
 supabase db push

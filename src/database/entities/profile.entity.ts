@@ -20,6 +20,14 @@ export class Profile {
   @Column({ name: 'email', type: 'text', nullable: true })
   email: string | null;
 
+  @Column({
+    name: 'auth_providers',
+    type: 'text',
+    array: true,
+    default: () => "'{}'",
+  })
+  authProviders?: string[];
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 

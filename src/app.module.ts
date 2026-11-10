@@ -1,13 +1,10 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AttachmentsModule } from './attachments/attachments.module';
-import { AuthController } from './auth/auth.controller';
-import { AuthGuard } from './auth/auth.guard';
+import { AuthModule } from './auth/auth.module';
 import { BudgetsModule } from './budgets/budgets.module';
 import { DatabaseModule } from './database/database.module';
-import { Profile } from './database/entities';
 import { ExpensesModule } from './expenses/expenses.module';
 import { HealthController } from './health/health.controller';
 import { InvitesModule } from './invites/invites.module';
@@ -20,7 +17,7 @@ import { SupabaseModule } from './supabase/supabase.module';
 @Module({
   imports: [
     DatabaseModule,
-    TypeOrmModule.forFeature([Profile]),
+    AuthModule,
     SupabaseModule,
     LedgersModule,
     InvitesModule,
@@ -31,7 +28,7 @@ import { SupabaseModule } from './supabase/supabase.module';
     AttachmentsModule,
     SavingsModule,
   ],
-  controllers: [AppController, HealthController, AuthController],
-  providers: [AppService, AuthGuard],
+  controllers: [AppController, HealthController],
+  providers: [AppService],
 })
 export class AppModule {}

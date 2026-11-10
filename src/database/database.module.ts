@@ -18,6 +18,7 @@ types.setTypeParser(1082, (val: string) => val);
         synchronize: false,
       }),
     }),
+    TypeOrmModule.forFeature(ALL_ENTITIES),
   ],
   exports: [TypeOrmModule],
 })

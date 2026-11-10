@@ -29,3 +29,6 @@ alter table public.invites
 
 alter table public.push_subscriptions
   drop constraint if exists push_subscriptions_user_id_fkey;
+
+alter table public.savings_goals
+  drop constraint if exists savings_goals_user_id_fkey;

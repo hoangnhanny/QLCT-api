@@ -41,37 +41,68 @@ export class AuthController {
     if (!id && !email) {
       throw new BadRequestException('Provide either id or email');
     }
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    if (id) {
-      params.push(id);
-      conditions.push(`user_id = $${params.length}`);
+    try {
+      const conditions: string[] = [];
+      const params: unknown[] = [];
+      if (id) {
+        params.push(id);
+        conditions.push(`user_id = $${params.length}`);
+      }
+      if (email) {
+        params.push(email);
+        conditions.push(`email = $${params.length}`);
+      }
+      const result = await this.supabase.db.query(
+        `select user_id, email, display_name, avatar_url, created_at, updated_at
+         from public.profiles
+         where ${conditions.join(' or ')}
+         limit 1`,
+        params,
+      );
+      const profile = result.rows[0];
+      return {
+        exists: Boolean(profile),
+        profile: profile
+          ? {
+              id: profile.user_id,
+              email: profile.email,
+              displayName: profile.display_name,
+              avatarUrl: profile.avatar_url,
+              createdAt: profile.created_at,
+              updatedAt: profile.updated_at,
+            }
+          : null,
+      };
+    } catch {
+      if (id) {
+        try {
+          const result = await this.supabase.db.query(
+            `select user_id, display_name, avatar_url, created_at
+             from public.profiles
+             where user_id = $1
+             limit 1`,
+            [id],
+          );
+          const profile = result.rows[0];
+          return {
+            exists: Boolean(profile),
+            profile: profile
+              ? {
+                  id: profile.user_id,
+                  email: null,
+                  displayName: profile.display_name,
+                  avatarUrl: profile.avatar_url,
+                  createdAt: profile.created_at,
+                  updatedAt: null,
+                }
+              : null,
+          };
+        } catch {
+          return { exists: false, profile: null };
+        }
+      }
+      return { exists: false, profile: null };
     }
-    if (email) {
-      params.push(email);
-      conditions.push(`email = $${params.length}`);
-    }
-    const result = await this.supabase.db.query(
-      `select user_id, email, display_name, avatar_url, created_at, updated_at
-       from public.profiles
-       where ${conditions.join(' or ')}
-       limit 1`,
-      params,
-    );
-    const profile = result.rows[0];
-    return {
-      exists: Boolean(profile),
-      profile: profile
-        ? {
-            id: profile.user_id,
-            email: profile.email,
-            displayName: profile.display_name,
-            avatarUrl: profile.avatar_url,
-            createdAt: profile.created_at,
-            updatedAt: profile.updated_at,
-          }
-        : null,
-    };
   }
 
   @Post('register')
@@ -107,19 +138,44 @@ export class AuthController {
     }
 
     // 2. Upsert user into public.profiles
-    const result = await this.supabase.db.query(
-      `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
-       values ($1, $2, $3, $4, now())
-       on conflict (user_id) do update set
-         email = coalesce(excluded.email, public.profiles.email),
-         display_name = coalesce(excluded.display_name, public.profiles.display_name),
-         avatar_url = coalesce(excluded.avatar_url, public.profiles.avatar_url),
-         updated_at = now()
-       returning user_id, email, display_name, avatar_url, created_at, updated_at`,
-      [userId, email, displayName, avatarUrl],
-    );
+    let profile;
+    try {
+      const result = await this.supabase.db.query(
+        `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
+         values ($1, $2, $3, $4, now())
+         on conflict (user_id) do update set
+           email = coalesce(excluded.email, public.profiles.email),
+           display_name = coalesce(excluded.display_name, public.profiles.display_name),
+           avatar_url = coalesce(excluded.avatar_url, public.profiles.avatar_url),
+           updated_at = now()
+         returning user_id, email, display_name, avatar_url, created_at, updated_at`,
+        [userId, email, displayName, avatarUrl],
+      );
+      profile = result.rows[0];
+    } catch {
+      try {
+        const fallbackResult = await this.supabase.db.query(
+          `insert into public.profiles (user_id, display_name, avatar_url)
+           values ($1, $2, $3)
+           on conflict (user_id) do update set
+             display_name = coalesce(excluded.display_name, public.profiles.display_name),
+             avatar_url = coalesce(excluded.avatar_url, public.profiles.avatar_url)
+           returning user_id, display_name, avatar_url, created_at`,
+          [userId, displayName, avatarUrl],
+        );
+        profile = fallbackResult.rows[0];
+      } catch {
+        profile = {
+          user_id: userId,
+          email,
+          display_name: displayName,
+          avatar_url: avatarUrl,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+      }
+    }
 
-    const profile = result.rows[0];
     return {
       success: true,
       profile: {

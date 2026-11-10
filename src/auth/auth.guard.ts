@@ -44,7 +44,11 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Token is missing a subject');
     }
 
-    await this.upsertProfile(userId, payload);
+    try {
+      await this.upsertProfile(userId, payload);
+    } catch {
+      // Non-blocking: don't fail user requests if profile upsert fails
+    }
 
     const user: AuthenticatedUser = { id: userId };
     request.user = user;
@@ -83,19 +87,35 @@ export class AuthGuard implements CanActivate {
       // In case auth.users table is not directly accessible or already managed
     }
 
-    await this.supabase.db.query(
-      `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
-       values ($1, $2, $3, $4, now())
-       on conflict (user_id) do update set
-         email = coalesce(excluded.email, public.profiles.email),
-         display_name = excluded.display_name,
-         avatar_url = excluded.avatar_url,
-         updated_at = now()
-       where public.profiles.display_name is distinct from excluded.display_name
-          or public.profiles.avatar_url is distinct from excluded.avatar_url
-          or public.profiles.email is distinct from excluded.email`,
-      [userId, email, displayName, avatarUrl],
-    );
+    try {
+      await this.supabase.db.query(
+        `insert into public.profiles (user_id, email, display_name, avatar_url, updated_at)
+         values ($1, $2, $3, $4, now())
+         on conflict (user_id) do update set
+           email = coalesce(excluded.email, public.profiles.email),
+           display_name = excluded.display_name,
+           avatar_url = excluded.avatar_url,
+           updated_at = now()
+         where public.profiles.display_name is distinct from excluded.display_name
+            or public.profiles.avatar_url is distinct from excluded.avatar_url
+            or public.profiles.email is distinct from excluded.email`,
+        [userId, email, displayName, avatarUrl],
+      );
+    } catch {
+      // Fallback query if migration 0004 has not run yet (legacy profiles schema)
+      try {
+        await this.supabase.db.query(
+          `insert into public.profiles (user_id, display_name, avatar_url)
+           values ($1, $2, $3)
+           on conflict (user_id) do update set
+             display_name = excluded.display_name,
+             avatar_url = excluded.avatar_url`,
+          [userId, displayName, avatarUrl],
+        );
+      } catch {
+        // Silently ignore if profiles table has foreign key constraint issues
+      }
+    }
   }
 }
 

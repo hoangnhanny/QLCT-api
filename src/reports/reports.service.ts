@@ -136,16 +136,18 @@ export class ReportsService {
     const byMemRes = await this.executeQuery<{
       user_id: string;
       display_name: string | null;
+      avatar_url: string | null;
       total: string | number;
     }>(
       `SELECT
         e.created_by as user_id,
         coalesce(p.display_name, 'Unknown') as display_name,
+        p.avatar_url as avatar_url,
         coalesce(sum(e.amount), 0) as total
        FROM public.expenses e
        LEFT JOIN public.profiles p ON e.created_by = p.user_id
        WHERE ${memConditions.join(' AND ')}
-       GROUP BY e.created_by, p.display_name
+       GROUP BY e.created_by, p.display_name, p.avatar_url
        ORDER BY total DESC`,
       memParams,
     );
@@ -153,6 +155,7 @@ export class ReportsService {
     const byMember = byMemRes.rows.map((r) => ({
       userId: r.user_id,
       displayName: r.display_name ?? 'Unknown',
+      avatarUrl: r.avatar_url ?? null,
       total: Number(r.total),
     }));
 

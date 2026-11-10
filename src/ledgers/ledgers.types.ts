@@ -20,6 +20,9 @@ export interface Member {
   ledgerId: string;
   userId: string;
   status: MemberStatus;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  email?: string | null;
   createdAt: Date;
 }
 
@@ -50,6 +53,11 @@ export interface MemberRow {
   user_id?: string;
   userId?: string;
   status: MemberStatus;
+  display_name?: string | null;
+  displayName?: string | null;
+  avatar_url?: string | null;
+  avatarUrl?: string | null;
+  email?: string | null;
   created_at?: Date;
   createdAt?: Date;
 }
@@ -95,6 +103,20 @@ export function mapLedger(row: LedgerRow | LedgerEntity): Ledger {
 }
 
 export function mapMember(row: MemberRow | MemberEntity): Member {
+  const profile = 'profile' in row ? row.profile : undefined;
+  const displayName =
+    profile?.displayName ??
+    ('displayName' in row ? row.displayName : undefined) ??
+    ('display_name' in row ? row.display_name : undefined) ??
+    null;
+  const avatarUrl =
+    profile?.avatarUrl ??
+    ('avatarUrl' in row ? row.avatarUrl : undefined) ??
+    ('avatar_url' in row ? row.avatar_url : undefined) ??
+    null;
+  const email =
+    profile?.email ?? ('email' in row ? row.email : undefined) ?? null;
+
   return {
     id: row.id,
     ledgerId: ('ledgerId' in row && row.ledgerId
@@ -104,6 +126,9 @@ export function mapMember(row: MemberRow | MemberEntity): Member {
       ? row.userId
       : (row as any).user_id) as string,
     status: row.status,
+    displayName,
+    avatarUrl,
+    email,
     createdAt: ('createdAt' in row && row.createdAt
       ? row.createdAt
       : (row as any).created_at) as Date,

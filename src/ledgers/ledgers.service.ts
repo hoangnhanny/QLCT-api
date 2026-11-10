@@ -166,7 +166,11 @@ export class LedgersService {
 
     if (this.legacyDb) {
       const result = await this.legacyDb.query(
-        `select * from public.members where ledger_id = $1 order by created_at`,
+        `select m.*, p.display_name, p.avatar_url, p.email
+         from public.members m
+         left join public.profiles p on p.user_id = m.user_id
+         where m.ledger_id = $1
+         order by m.created_at`,
         [ledgerId],
       );
       return result.rows.map(mapMember);
@@ -174,6 +178,7 @@ export class LedgersService {
 
     const members = await this.memberRepo.find({
       where: { ledgerId },
+      relations: { profile: true },
       order: { createdAt: 'ASC' },
     });
     return members.map(mapMember);

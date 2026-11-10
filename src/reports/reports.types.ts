@@ -17,6 +17,7 @@ export interface MonthlyCategorySummary {
 export interface MonthlyMemberSummary {
   userId: string;
   displayName: string;
+  avatarUrl?: string | null;
   total: number;
 }
 

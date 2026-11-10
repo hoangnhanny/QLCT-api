@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -32,6 +33,47 @@ export class AuthController {
       avatarUrl: profile?.avatar_url ?? null,
       createdAt: profile?.created_at ?? null,
       updatedAt: profile?.updated_at ?? null,
+    };
+  }
+
+  @Get('check-user')
+  async checkUser(
+    @Query('id') id?: string,
+    @Query('email') email?: string,
+  ) {
+    if (!id && !email) {
+      throw new BadRequestException('Provide either id or email');
+    }
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (id) {
+      params.push(id);
+      conditions.push(`user_id = $${params.length}`);
+    }
+    if (email) {
+      params.push(email);
+      conditions.push(`email = $${params.length}`);
+    }
+    const result = await this.supabase.db.query(
+      `select user_id, email, display_name, avatar_url, created_at, updated_at
+       from public.profiles
+       where ${conditions.join(' or ')}
+       limit 1`,
+      params,
+    );
+    const profile = result.rows[0];
+    return {
+      exists: Boolean(profile),
+      profile: profile
+        ? {
+            id: profile.user_id,
+            email: profile.email,
+            displayName: profile.display_name,
+            avatarUrl: profile.avatar_url,
+            createdAt: profile.created_at,
+            updatedAt: profile.updated_at,
+          }
+        : null,
     };
   }
 

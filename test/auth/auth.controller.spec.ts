@@ -93,4 +93,37 @@ describe('AuthController', () => {
       controller.register({ id: '', email: 'test@example.com' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  describe('checkUser', () => {
+    it('throws BadRequestException if neither id nor email provided', async () => {
+      await expect(controller.checkUser(undefined, undefined)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('returns exists true when user profile is found by id', async () => {
+      const mockProfile = {
+        user_id: '123e4567-e89b-12d3-a456-426614174000',
+        email: 'user@example.com',
+        display_name: 'Test User',
+        avatar_url: 'https://example.com/avatar.jpg',
+        created_at: new Date('2026-01-01'),
+        updated_at: new Date('2026-01-02'),
+      };
+      queryMock.mockResolvedValueOnce({ rows: [mockProfile] });
+
+      const result = await controller.checkUser('123e4567-e89b-12d3-a456-426614174000');
+      expect(result.exists).toBe(true);
+      expect(result.profile?.id).toBe(mockProfile.user_id);
+      expect(result.profile?.email).toBe(mockProfile.email);
+    });
+
+    it('returns exists false when user is not found', async () => {
+      queryMock.mockResolvedValueOnce({ rows: [] });
+
+      const result = await controller.checkUser(undefined, 'nonexistent@example.com');
+      expect(result.exists).toBe(false);
+      expect(result.profile).toBeNull();
+    });
+  });
 });

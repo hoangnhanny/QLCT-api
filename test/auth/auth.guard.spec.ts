@@ -26,7 +26,10 @@ describe('AuthGuard', () => {
 
   function createToken(sub = 'user-1', secret = DEFAULT_LOCAL_JWT_SECRET) {
     return new SignJWT({
-      user_metadata: { full_name: 'Test User', avatar_url: 'https://example.com/avatar.jpg' },
+      user_metadata: {
+        full_name: 'Test User',
+        avatar_url: 'https://example.com/avatar.jpg',
+      },
       email: 'test@example.com',
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -39,12 +42,16 @@ describe('AuthGuard', () => {
     const token = await createToken('user-1');
     const { request, context } = requestContext(token);
 
-    await expect(new AuthGuard(supabase).canActivate(context)).resolves.toBe(true);
-    expect(request.user).toEqual({ id: 'user-1' });
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('profiles'),
-      ['user-1', 'test@example.com', 'Test User', 'https://example.com/avatar.jpg'],
+    await expect(new AuthGuard(supabase).canActivate(context)).resolves.toBe(
+      true,
     );
+    expect(request.user).toEqual({ id: 'user-1' });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('profiles'), [
+      'user-1',
+      'test@example.com',
+      'Test User',
+      'https://example.com/avatar.jpg',
+    ]);
   });
 
   it('rejects an expired token', async () => {
@@ -55,28 +62,31 @@ describe('AuthGuard', () => {
       .sign(new TextEncoder().encode(DEFAULT_LOCAL_JWT_SECRET));
     const { context } = requestContext(token);
 
-    await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      new AuthGuard(supabase).canActivate(context),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(query).not.toHaveBeenCalled();
   });
 
   it('rejects a token signed with the wrong secret', async () => {
-    const token = await createToken('user-1', 'completely-wrong-secret-key-32-chars-long');
+    const token = await createToken(
+      'user-1',
+      'completely-wrong-secret-key-32-chars-long',
+    );
     const { context } = requestContext(token);
 
-    await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      new AuthGuard(supabase).canActivate(context),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(query).not.toHaveBeenCalled();
   });
 
   it('rejects a missing or malformed token', async () => {
     for (const token of [undefined, 'not-a-jwt']) {
       const { context } = requestContext(token);
-      await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(
+        new AuthGuard(supabase).canActivate(context),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(query).not.toHaveBeenCalled();
     }
   });
@@ -89,8 +99,8 @@ describe('AuthGuard', () => {
       .sign(new TextEncoder().encode(DEFAULT_LOCAL_JWT_SECRET));
     const { context } = requestContext(token);
 
-    await expect(new AuthGuard(supabase).canActivate(context)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      new AuthGuard(supabase).canActivate(context),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

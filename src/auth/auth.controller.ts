@@ -37,10 +37,7 @@ export class AuthController {
   }
 
   @Get('check-user')
-  async checkUser(
-    @Query('id') id?: string,
-    @Query('email') email?: string,
-  ) {
+  async checkUser(@Query('id') id?: string, @Query('email') email?: string) {
     if (!id && !email) {
       throw new BadRequestException('Provide either id or email');
     }

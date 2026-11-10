@@ -462,6 +462,18 @@ export class ExpensesService {
         throw new BadRequestException('Content cannot be empty');
       }
 
+      if (dto.type === 'income') {
+        const ledger = await this.legacyDb.query(
+          'SELECT kind FROM public.ledgers WHERE id = $1',
+          [ledgerId],
+        );
+        if (ledger.rows[0]?.kind !== 'business') {
+          throw new BadRequestException(
+            'Income is only available in business ledgers',
+          );
+        }
+      }
+
       if (dto.categoryId) {
         const catRes = await this.legacyDb.query(
           `SELECT id FROM public.categories WHERE id = $1 AND ledger_id = $2`,
@@ -477,6 +489,10 @@ export class ExpensesService {
       const updates: string[] = [];
       const params: any[] = [expenseId, ledgerId];
 
+      if (dto.type !== undefined) {
+        params.push(dto.type);
+        updates.push(`type = $${params.length}`);
+      }
       if (dto.amount !== undefined) {
         params.push(dto.amount);
         updates.push(`amount = $${params.length}`);
@@ -525,6 +541,20 @@ export class ExpensesService {
       throw new BadRequestException('Content cannot be empty');
     }
 
+    if (dto.type === 'income') {
+      const ledger = await this.dataSource!.getRepository(LedgerEntity).findOne(
+        {
+          where: { id: ledgerId },
+          select: { kind: true },
+        },
+      );
+      if (ledger?.kind !== 'business') {
+        throw new BadRequestException(
+          'Income is only available in business ledgers',
+        );
+      }
+    }
+
     if (dto.categoryId) {
       const cat = await this.dataSource!.getRepository(CategoryEntity).findOne({
         where: { id: dto.categoryId, ledgerId },
@@ -536,6 +566,7 @@ export class ExpensesService {
       }
     }
 
+    if (dto.type !== undefined) existing.type = dto.type;
     if (dto.amount !== undefined) existing.amount = dto.amount;
     if (dto.content !== undefined) existing.content = dto.content.trim();
     if (dto.spentAt !== undefined) existing.spentAt = new Date(dto.spentAt);

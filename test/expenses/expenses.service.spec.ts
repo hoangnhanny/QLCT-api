@@ -234,6 +234,69 @@ describe('ExpensesService', () => {
         }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('rejects updating type to income on family ledger', async () => {
+      mockDb.query.mockImplementation((sql: string) => {
+        if (sql.includes('SELECT * FROM public.expenses')) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'exp-1',
+                ledger_id: 'ledger-1',
+                created_by: 'user-1',
+                amount: 10000,
+                content: 'Test',
+              },
+            ],
+          });
+        }
+        if (sql.includes('SELECT kind FROM public.ledgers')) {
+          return Promise.resolve({ rows: [{ kind: 'family' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      await expect(
+        service.update('ledger-1', 'user-1', 'exp-1', { type: 'income' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows updating type to income on business ledger', async () => {
+      mockDb.query.mockImplementation((sql: string) => {
+        if (
+          sql.includes('SELECT * FROM public.expenses') ||
+          sql.includes('WHERE e.id = $1')
+        ) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'exp-1',
+                ledger_id: 'ledger-1',
+                created_by: 'user-1',
+                amount: 10000,
+                content: 'Doanh thu',
+                type: 'income',
+                spent_at: new Date(),
+                created_at: new Date(),
+              },
+            ],
+          });
+        }
+        if (sql.includes('SELECT kind FROM public.ledgers')) {
+          return Promise.resolve({ rows: [{ kind: 'business' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const updated = await service.update('ledger-1', 'user-1', 'exp-1', {
+        type: 'income',
+      });
+      expect(updated.type).toBe('income');
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE public.expenses SET type ='),
+        expect.arrayContaining(['exp-1', 'ledger-1', 'income']),
+      );
+    });
   });
 
   describe('remove', () => {

@@ -77,6 +77,7 @@ describe('LedgersService', () => {
 
       const categories = await service.listCategories(ledger.id);
       expect(categories.map((c) => c.name)).toEqual([
+        'Doanh thu',
         'Nhập hàng',
         'Nhân công',
         'Vận chuyển',

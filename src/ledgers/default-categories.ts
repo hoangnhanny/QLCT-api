@@ -18,6 +18,7 @@ export const DEFAULT_CATEGORIES: Record<LedgerKind, DefaultCategory[]> = {
     { name: 'Khác', icon: '🗂️' },
   ],
   business: [
+    { name: 'Doanh thu', icon: '💵' },
     { name: 'Nhập hàng', icon: '📦' },
     { name: 'Nhân công', icon: '👷' },
     { name: 'Vận chuyển', icon: '🚚' },

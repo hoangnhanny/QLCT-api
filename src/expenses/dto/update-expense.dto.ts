@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsInt,
   IsISO8601,
   IsNotEmpty,
@@ -11,6 +12,10 @@ import {
 } from 'class-validator';
 
 export class UpdateExpenseDto {
+  @IsOptional()
+  @IsIn(['expense', 'income'])
+  type?: 'expense' | 'income';
+
   @IsOptional()
   @IsInt()
   @Min(1)

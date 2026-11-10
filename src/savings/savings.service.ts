@@ -35,6 +35,24 @@ function mapGoal(row: GoalRow | SavingsGoalEntity) {
   };
 }
 
+function isSavingsUserFkViolation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as {
+    code?: string;
+    constraint?: string;
+    message?: string;
+    driverError?: { code?: string; constraint?: string; message?: string };
+  };
+  const code = err.code ?? err.driverError?.code;
+  const constraint = err.constraint ?? err.driverError?.constraint;
+  const message = err.message ?? err.driverError?.message ?? '';
+  return (
+    code === '23503' &&
+    (constraint === 'savings_goals_user_id_fkey' ||
+      message.includes('savings_goals_user_id_fkey'))
+  );
+}
+
 @Injectable()
 export class SavingsService {
   private readonly legacyDb?: {
@@ -84,6 +102,18 @@ export class SavingsService {
     if (!dto.name.trim())
       throw new BadRequestException('Goal name is required');
 
+    try {
+      return await this.insertGoal(userId, dto);
+    } catch (error) {
+      // Self-heal if an existing database still has the pre-0004 auth.users FK
+      if (isSavingsUserFkViolation(error) && (await this.dropLegacyUserFk())) {
+        return this.insertGoal(userId, dto);
+      }
+      throw error;
+    }
+  }
+
+  private async insertGoal(userId: string, dto: CreateSavingsGoalDto) {
     if (this.legacyDb) {
       const result = await this.legacyDb.query(
         'INSERT INTO public.savings_goals (user_id, name, target, due_date) VALUES ($1, $2, $3, $4) RETURNING *',
@@ -100,6 +130,24 @@ export class SavingsService {
     });
     const saved = await this.goalRepo!.save(goal);
     return mapGoal(saved);
+  }
+
+  private async dropLegacyUserFk(): Promise<boolean> {
+    const sql =
+      'ALTER TABLE public.savings_goals DROP CONSTRAINT IF EXISTS savings_goals_user_id_fkey';
+    try {
+      if (this.legacyDb) {
+        await this.legacyDb.query(sql);
+        return true;
+      }
+      if (this.dataSource) {
+        await this.dataSource.query(sql);
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
   }
 
   async entries(userId: string, goalId: string) {

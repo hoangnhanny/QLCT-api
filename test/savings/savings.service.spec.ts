@@ -82,4 +82,103 @@ describe('SavingsService', () => {
     expect(query).toHaveBeenCalledWith('COMMIT');
     expect(release).toHaveBeenCalled();
   });
+
+  it('drops legacy savings_goals_user_id_fkey and retries create on TypeORM FK violation', async () => {
+    const goalRepo = {
+      create: jest.fn((v) => v),
+      save: jest
+        .fn()
+        .mockRejectedValueOnce({
+          driverError: {
+            code: '23503',
+            constraint: 'savings_goals_user_id_fkey',
+          },
+        })
+        .mockResolvedValueOnce({
+          id: 'goal-1',
+          name: 'Dự phòng',
+          target: 1000000,
+          balance: 0,
+          dueDate: null,
+        }),
+    };
+    const dataSource = { query: jest.fn().mockResolvedValue([]) };
+    const typeOrmService = new SavingsService(
+      goalRepo as any,
+      undefined,
+      dataSource as any,
+    );
+
+    const created = await typeOrmService.create('owner-1', {
+      name: 'Dự phòng',
+      target: 1000000,
+    });
+
+    expect(created).toEqual({
+      id: 'goal-1',
+      name: 'Dự phòng',
+      target: 1000000,
+      balance: 0,
+      dueDate: null,
+    });
+    expect(dataSource.query).toHaveBeenCalledWith(
+      'ALTER TABLE public.savings_goals DROP CONSTRAINT IF EXISTS savings_goals_user_id_fkey',
+    );
+    expect(goalRepo.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('rethrows unrelated errors without dropping constraints', async () => {
+    const goalRepo = {
+      create: jest.fn((v) => v),
+      save: jest.fn().mockRejectedValue(new Error('connection lost')),
+    };
+    const dataSource = { query: jest.fn() };
+    const typeOrmService = new SavingsService(
+      goalRepo as any,
+      undefined,
+      dataSource as any,
+    );
+
+    await expect(
+      typeOrmService.create('owner-1', { name: 'Dự phòng', target: 1000000 }),
+    ).rejects.toThrow('connection lost');
+    expect(dataSource.query).not.toHaveBeenCalled();
+  });
+
+  it('drops legacy savings_goals_user_id_fkey and retries create on legacyDb FK violation', async () => {
+    query
+      .mockRejectedValueOnce({
+        code: '23503',
+        constraint: 'savings_goals_user_id_fkey',
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'goal-2',
+            name: 'Du lịch',
+            target: '5000000',
+            balance: '0',
+            due_date: null,
+          },
+        ],
+      });
+
+    const created = await service.create('owner-1', {
+      name: 'Du lịch',
+      target: 5000000,
+    });
+
+    expect(created).toEqual({
+      id: 'goal-2',
+      name: 'Du lịch',
+      target: 5000000,
+      balance: 0,
+      dueDate: null,
+    });
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      'ALTER TABLE public.savings_goals DROP CONSTRAINT IF EXISTS savings_goals_user_id_fkey',
+    );
+  });
 });

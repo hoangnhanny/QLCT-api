@@ -10,6 +10,7 @@ import {
 } from '../database/entities';
 import { PushModule } from '../push/push.module';
 import { SupabaseModule } from '../supabase/supabase.module';
+import { AlertsController } from './alerts.controller';
 import { AlertsService } from './alerts.service';
 import { BudgetsController } from './budgets.controller';
 import { BudgetsService } from './budgets.service';
@@ -27,7 +28,7 @@ import { BudgetsService } from './budgets.service';
     SupabaseModule,
     PushModule,
   ],
-  controllers: [BudgetsController],
+  controllers: [BudgetsController, AlertsController],
   providers: [BudgetsService, AlertsService],
   exports: [BudgetsService, AlertsService, TypeOrmModule],
 })

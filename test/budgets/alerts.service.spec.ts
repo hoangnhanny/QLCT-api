@@ -202,4 +202,80 @@ describe('AlertsService', () => {
     // No threshold reached -> no push
     expect(mockPushService.send).not.toHaveBeenCalled();
   });
+
+  describe('listForUser', () => {
+    it('lists budget alerts visible to user with spent and percent', async () => {
+      const createdAt = new Date('2026-11-11T05:00:00Z');
+      mockDb.query.mockImplementation((sql: string, params: any[]) => {
+        if (sql.includes('FROM public.budget_alerts ba')) {
+          expect(params).toEqual(['user-1', 'ledger-1', '2026-11-01']);
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'alert-100',
+                budget_id: 'b-1',
+                threshold: 100,
+                month: '2026-11-01',
+                created_at: createdAt,
+                ledger_id: 'ledger-1',
+                member_user_id: null,
+                category_id: 'cat-food',
+                amount: '1000000',
+                ledger_name: 'Gia đình',
+                ledger_kind: 'family',
+                category_name: 'Ăn uống',
+                member_display_name: null,
+              },
+              {
+                id: 'alert-80',
+                budget_id: 'b-1',
+                threshold: 80,
+                month: '2026-11-01',
+                created_at: createdAt,
+                ledger_id: 'ledger-1',
+                member_user_id: null,
+                category_id: 'cat-food',
+                amount: '1000000',
+                ledger_name: 'Gia đình',
+                ledger_kind: 'family',
+                category_name: 'Ăn uống',
+                member_display_name: null,
+              },
+            ],
+          });
+        }
+        if (sql.includes('sum(amount)')) {
+          return Promise.resolve({ rows: [{ spent: '1250000' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const alerts = await service.listForUser('user-1', {
+        ledgerId: 'ledger-1',
+        month: '2026-11',
+      });
+
+      expect(alerts).toHaveLength(2);
+      expect(alerts[0]).toMatchObject({
+        id: 'alert-100',
+        budgetId: 'b-1',
+        ledgerId: 'ledger-1',
+        ledgerName: 'Gia đình',
+        ledgerKind: 'family',
+        threshold: 100,
+        month: '2026-11-01',
+        limit: 1000000,
+        spent: 1250000,
+        percent: 125,
+        scope: 'ledger',
+        categoryId: 'cat-food',
+        categoryName: 'Ăn uống',
+      });
+      // Spent query is cached per (budgetId, month)
+      const spentCalls = mockDb.query.mock.calls.filter((call: any[]) =>
+        call[0].includes('sum(amount)'),
+      );
+      expect(spentCalls).toHaveLength(1);
+    });
+  });
 });

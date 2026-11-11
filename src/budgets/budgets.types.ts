@@ -115,3 +115,22 @@ export function mapBudget(row: BudgetRow | BudgetEntity): Budget {
       : null,
   };
 }
+
+export interface BudgetAlertItem {
+  id: string;
+  budgetId: string;
+  ledgerId: string;
+  ledgerName: string;
+  ledgerKind: 'family' | 'business';
+  threshold: 80 | 100;
+  month: string; // YYYY-MM-01
+  limit: number;
+  spent: number;
+  percent: number;
+  scope: 'ledger' | 'member';
+  categoryId: string | null;
+  categoryName: string | null;
+  memberUserId: string | null;
+  memberDisplayName: string | null;
+  createdAt: Date;
+}

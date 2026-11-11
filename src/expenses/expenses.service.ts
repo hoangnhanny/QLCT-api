@@ -307,7 +307,9 @@ export class ExpensesService {
 
       if (filter?.categoryId) {
         params.push(filter.categoryId);
-        conditions.push(`e.category_id = $${params.length}`);
+        conditions.push(
+          `(e.category_id = $${params.length} OR c.parent_id = $${params.length})`,
+        );
       }
 
       if (filter?.userId) {
@@ -368,7 +370,9 @@ export class ExpensesService {
     }
 
     if (filter?.categoryId) {
-      qb.andWhere('e.category_id = :catId', { catId: filter.categoryId });
+      qb.andWhere('(e.category_id = :catId OR c.parent_id = :catId)', {
+        catId: filter.categoryId,
+      });
     }
 
     if (filter?.userId) {

@@ -25,6 +25,9 @@ export class Category {
   @Column({ type: 'int', nullable: true })
   sort: number | null;
 
+  @Column('uuid', { name: 'parent_id', nullable: true })
+  parentId: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

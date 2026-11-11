@@ -130,7 +130,7 @@ export class AlertsService {
 
         if (budget.category_id) {
           params.push(budget.category_id);
-          sql += ` AND category_id = $${params.length}`;
+          sql += ` AND (category_id = $${params.length} OR category_id IN (SELECT id FROM public.categories WHERE parent_id = $${params.length}))`;
         }
 
         const spentRes = await this.legacyDb.query(sql, params);
@@ -238,9 +238,12 @@ export class AlertsService {
       }
 
       if (budget.categoryId) {
-        qb.andWhere('e.category_id = :categoryId', {
-          categoryId: budget.categoryId,
-        });
+        qb.andWhere(
+          '(e.category_id = :categoryId OR e.category_id IN (SELECT id FROM public.categories WHERE parent_id = :categoryId))',
+          {
+            categoryId: budget.categoryId,
+          },
+        );
       }
 
       const spentRes = await qb.getRawOne();

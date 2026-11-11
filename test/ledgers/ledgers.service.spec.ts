@@ -55,15 +55,28 @@ describe('LedgersService', () => {
       expect(members[0].status).toBe('active');
 
       const categories = await service.listCategories(ledger.id);
-      expect(categories.map((c) => c.name)).toEqual([
+      const topLevel = categories.filter((c) => !c.parentId);
+      expect(topLevel.map((c) => c.name)).toEqual([
         'Ăn uống',
         'Đồ dùng',
         'Đi lại',
         'Hoá đơn',
+        'Nhà cửa',
+        'Con cái',
         'Sức khoẻ',
+        'Cá nhân & Làm đẹp',
         'Giáo dục',
         'Giải trí',
+        'Hiếu hỉ & Quà tặng',
         'Khác',
+      ]);
+      const food = topLevel.find((c) => c.name === 'Ăn uống');
+      const foodSubs = categories.filter((c) => c.parentId === food?.id);
+      expect(foodSubs.map((c) => c.name)).toEqual([
+        'Đi chợ / Siêu thị',
+        'Ăn ngoài',
+        'Cà phê / Trà sữa',
+        'Ăn sáng / Ăn trưa',
       ]);
     });
 
@@ -76,7 +89,8 @@ describe('LedgersService', () => {
       });
 
       const categories = await service.listCategories(ledger.id);
-      expect(categories.map((c) => c.name)).toEqual([
+      const topLevel = categories.filter((c) => !c.parentId);
+      expect(topLevel.map((c) => c.name)).toEqual([
         'Doanh thu',
         'Thu khác',
         'Nhập hàng',
@@ -87,6 +101,10 @@ describe('LedgersService', () => {
         'Marketing',
         'Khác',
       ]);
+      const revenue = topLevel.find((c) => c.name === 'Doanh thu');
+      expect(
+        categories.filter((c) => c.parentId === revenue?.id).map((c) => c.name),
+      ).toEqual(['Bán trực tiếp', 'Bán online / Sàn', 'Chuyển khoản / Thu hộ']);
     });
 
     it('sets month to specified month or defaults to current month', async () => {
@@ -363,6 +381,31 @@ describe('LedgersService', () => {
       await service.deleteCategory(ledger.id, admin, created.id);
       const categories = await service.listCategories(ledger.id);
       expect(categories.find((c) => c.id === created.id)).toBeUndefined();
+    });
+
+    it('admin can add a sub-category under a parent category and prevents multi-level nesting', async () => {
+      const admin = await createTestUser('admin-sub');
+      const ledger = await service.create(admin, {
+        kind: 'family',
+        name: 'Nhà',
+      });
+      const parent = (await service.listCategories(ledger.id)).find(
+        (c) => !c.parentId && c.name === 'Ăn uống',
+      )!;
+
+      const sub = await service.addCategory(ledger.id, admin, {
+        name: 'Ăn vặt đêm',
+        icon: '🌙',
+        parentId: parent.id,
+      });
+      expect(sub.parentId).toBe(parent.id);
+
+      await expect(
+        service.addCategory(ledger.id, admin, {
+          name: 'Cấp 3',
+          parentId: sub.id,
+        }),
+      ).rejects.toThrow();
     });
   });
 });

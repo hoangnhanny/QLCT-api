@@ -206,7 +206,7 @@ export class ReportsService {
 
       if (b.category_id) {
         bParams.push(b.category_id);
-        bSql += ` AND category_id = $${bParams.length}`;
+        bSql += ` AND (category_id = $${bParams.length} OR category_id IN (SELECT id FROM public.categories WHERE parent_id = $${bParams.length}))`;
       }
 
       const spentRes = await this.executeQuery<{ spent: string | number }>(

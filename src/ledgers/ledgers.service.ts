@@ -81,11 +81,21 @@ export class LedgersService {
 
         const defaults = DEFAULT_CATEGORIES[dto.kind];
         for (const [index, category] of defaults.entries()) {
-          await client.query(
-            `insert into public.categories (ledger_id, name, icon, sort)
-             values ($1, $2, $3, $4)`,
+          const parentRes = await client.query(
+            `insert into public.categories (ledger_id, name, icon, sort, parent_id)
+             values ($1, $2, $3, $4, null) returning id`,
             [ledgerRow.id, category.name, category.icon, index],
           );
+          const parentId = parentRes.rows[0].id as string;
+          if (category.children?.length) {
+            for (const [subIdx, sub] of category.children.entries()) {
+              await client.query(
+                `insert into public.categories (ledger_id, name, icon, sort, parent_id)
+                 values ($1, $2, $3, $4, $5)`,
+                [ledgerRow.id, sub.name, sub.icon, subIdx, parentId],
+              );
+            }
+          }
         }
 
         await client.query('COMMIT');
@@ -115,15 +125,28 @@ export class LedgersService {
       await manager.save(MemberEntity, member);
 
       const defaults = DEFAULT_CATEGORIES[dto.kind];
-      const categories = defaults.map((cat, index) =>
-        manager.create(CategoryEntity, {
+      for (const [index, cat] of defaults.entries()) {
+        const parentEntity = manager.create(CategoryEntity, {
           ledgerId: savedLedger.id,
           name: cat.name,
           icon: cat.icon ?? null,
           sort: index,
-        }),
-      );
-      await manager.save(CategoryEntity, categories);
+          parentId: null,
+        });
+        const savedParent = await manager.save(CategoryEntity, parentEntity);
+        if (cat.children?.length) {
+          const subEntities = cat.children.map((sub, subIdx) =>
+            manager.create(CategoryEntity, {
+              ledgerId: savedLedger.id,
+              name: sub.name,
+              icon: sub.icon ?? null,
+              sort: subIdx,
+              parentId: savedParent.id,
+            }),
+          );
+          await manager.save(CategoryEntity, subEntities);
+        }
+      }
 
       return mapLedger(savedLedger);
     });
@@ -305,18 +328,59 @@ export class LedgersService {
     return categories.map(mapCategory);
   }
 
+  private async validateParentCategory(
+    ledgerId: string,
+    parentId?: string | null,
+    selfId?: string,
+  ): Promise<string | null> {
+    if (!parentId) return null;
+    if (selfId && parentId === selfId) {
+      throw new BadRequestException('Category cannot be its own parent');
+    }
+
+    if (this.legacyDb) {
+      const res = await this.legacyDb.query(
+        `select id, parent_id from public.categories where ledger_id = $1 and id = $2`,
+        [ledgerId, parentId],
+      );
+      if (res.rowCount === 0) {
+        throw new BadRequestException('Parent category not found in ledger');
+      }
+      if (res.rows[0].parent_id) {
+        throw new BadRequestException(
+          'Sub-categories can only be nested one level deep',
+        );
+      }
+      return parentId;
+    }
+
+    const parent = await this.categoryRepo.findOne({
+      where: { id: parentId, ledgerId },
+    });
+    if (!parent) {
+      throw new BadRequestException('Parent category not found in ledger');
+    }
+    if (parent.parentId) {
+      throw new BadRequestException(
+        'Sub-categories can only be nested one level deep',
+      );
+    }
+    return parentId;
+  }
+
   async addCategory(
     ledgerId: string,
     actorId: string,
     dto: CreateCategoryDto,
   ): Promise<Category> {
     await this.assertAdmin(ledgerId, actorId);
+    const parentId = await this.validateParentCategory(ledgerId, dto.parentId);
 
     if (this.legacyDb) {
       const result = await this.legacyDb.query(
-        `insert into public.categories (ledger_id, name, icon, sort)
-         values ($1, $2, $3, $4) returning *`,
-        [ledgerId, dto.name, dto.icon ?? null, dto.sort ?? null],
+        `insert into public.categories (ledger_id, name, icon, sort, parent_id)
+         values ($1, $2, $3, $4, $5) returning *`,
+        [ledgerId, dto.name, dto.icon ?? null, dto.sort ?? null, parentId],
       );
       return mapCategory(result.rows[0]);
     }
@@ -326,6 +390,7 @@ export class LedgersService {
       name: dto.name,
       icon: dto.icon ?? null,
       sort: dto.sort ?? null,
+      parentId,
     });
     const saved = await this.categoryRepo.save(cat);
     return mapCategory(saved);
@@ -338,13 +403,18 @@ export class LedgersService {
     dto: UpdateCategoryDto,
   ): Promise<Category> {
     await this.assertAdmin(ledgerId, actorId);
+    const hasParentUpdate = dto.parentId !== undefined;
+    const validatedParentId = hasParentUpdate
+      ? await this.validateParentCategory(ledgerId, dto.parentId, categoryId)
+      : undefined;
 
     if (this.legacyDb) {
       const result = await this.legacyDb.query(
         `update public.categories set
            name = coalesce($3, name),
            icon = coalesce($4, icon),
-           sort = coalesce($5, sort)
+           sort = coalesce($5, sort),
+           parent_id = case when $6::boolean then $7 else parent_id end
          where ledger_id = $1 and id = $2
          returning *`,
         [
@@ -353,6 +423,8 @@ export class LedgersService {
           dto.name ?? null,
           dto.icon ?? null,
           dto.sort ?? null,
+          hasParentUpdate,
+          validatedParentId ?? null,
         ],
       );
       if (result.rowCount === 0) {
@@ -371,6 +443,7 @@ export class LedgersService {
     if (dto.name !== undefined) category.name = dto.name;
     if (dto.icon !== undefined) category.icon = dto.icon ?? null;
     if (dto.sort !== undefined) category.sort = dto.sort ?? null;
+    if (hasParentUpdate) category.parentId = validatedParentId ?? null;
 
     const saved = await this.categoryRepo.save(category);
     return mapCategory(saved);

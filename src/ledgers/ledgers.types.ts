@@ -32,6 +32,7 @@ export interface Category {
   name: string;
   icon: string | null;
   sort: number | null;
+  parentId: string | null;
   createdAt: Date;
 }
 
@@ -69,6 +70,8 @@ export interface CategoryRow {
   name: string;
   icon: string | null;
   sort: number | null;
+  parent_id?: string | null;
+  parentId?: string | null;
   created_at?: Date;
   createdAt?: Date;
 }
@@ -144,6 +147,10 @@ export function mapCategory(row: CategoryRow | CategoryEntity): Category {
     name: row.name,
     icon: row.icon ?? null,
     sort: row.sort ?? null,
+    parentId:
+      'parentId' in row
+        ? (row.parentId ?? null)
+        : ((row as any).parent_id ?? null),
     createdAt: ('createdAt' in row && row.createdAt
       ? row.createdAt
       : (row as any).created_at) as Date,

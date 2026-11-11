@@ -1,8 +1,21 @@
+import { getApps, initializeApp } from 'firebase-admin/app';
 import * as webpush from 'web-push';
 import { PushService } from '../../src/push/push.service';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 
+const mockSendEachForMulticast = jest.fn();
+
 jest.mock('web-push');
+jest.mock('firebase-admin/app', () => ({
+  getApps: jest.fn(() => []),
+  initializeApp: jest.fn(),
+  cert: jest.fn((sa) => sa),
+}));
+jest.mock('firebase-admin/messaging', () => ({
+  getMessaging: jest.fn(() => ({
+    sendEachForMulticast: mockSendEachForMulticast,
+  })),
+}));
 
 describe('PushService', () => {
   let service: PushService;
@@ -10,6 +23,7 @@ describe('PushService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (getApps as jest.Mock).mockReturnValue([]);
 
     mockDb = {
       query: jest.fn(),
@@ -19,6 +33,10 @@ describe('PushService', () => {
       db: mockDb,
     } as unknown as SupabaseService;
 
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    delete process.env.FIREBASE_PROJECT_ID;
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+    delete process.env.FIREBASE_PRIVATE_KEY;
     process.env.VAPID_PUBLIC_KEY = 'test-vapid-public-key';
     process.env.VAPID_PRIVATE_KEY = 'test-vapid-private-key';
     process.env.VAPID_SUBJECT = 'mailto:test@example.com';
@@ -29,6 +47,16 @@ describe('PushService', () => {
   describe('getPublicKey', () => {
     it('returns the configured VAPID public key', () => {
       expect(service.getPublicKey()).toBe('test-vapid-public-key');
+    });
+
+    it('reports Firebase enabled when Firebase Admin is configured', () => {
+      process.env.FIREBASE_PROJECT_ID = 'qlct-test';
+      process.env.FIREBASE_CLIENT_EMAIL =
+        'bot@qlct-test.iam.gserviceaccount.com';
+      process.env.FIREBASE_PRIVATE_KEY =
+        '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----\\n';
+
+      expect(service.isFirebaseEnabled()).toBe(true);
     });
   });
 
@@ -54,6 +82,19 @@ describe('PushService', () => {
         ],
       );
     });
+
+    it('stores FCM token with fcm: prefix', async () => {
+      mockDb.query.mockResolvedValue({ rowCount: 1 });
+
+      await service.subscribe('user-1', {
+        token: 'fcm-device-token-123',
+      });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT (endpoint) DO UPDATE'),
+        ['user-1', 'fcm:fcm-device-token-123', 'fcm', 'fcm'],
+      );
+    });
   });
 
   describe('unsubscribe', () => {
@@ -64,7 +105,18 @@ describe('PushService', () => {
 
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.stringContaining('DELETE FROM public.push_subscriptions'),
-        ['user-1', 'https://push.example.com/sub/123'],
+        ['user-1', ['https://push.example.com/sub/123']],
+      );
+    });
+
+    it('deletes FCM subscription for either prefixed or raw token', async () => {
+      mockDb.query.mockResolvedValue({ rowCount: 1 });
+
+      await service.unsubscribe('user-1', 'fcm-device-token-123');
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM public.push_subscriptions'),
+        ['user-1', ['fcm:fcm-device-token-123', 'fcm-device-token-123']],
       );
     });
   });
@@ -201,6 +253,84 @@ describe('PushService', () => {
           'DELETE FROM public.push_subscriptions WHERE endpoint = $1',
         ),
         ['https://push.example.com/notfound-404'],
+      );
+    });
+
+    it('sends FCM subscriptions via Firebase Admin and deletes stale tokens', async () => {
+      process.env.FIREBASE_PROJECT_ID = 'qlct-test';
+      process.env.FIREBASE_CLIENT_EMAIL =
+        'bot@qlct-test.iam.gserviceaccount.com';
+      process.env.FIREBASE_PRIVATE_KEY =
+        '-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----\\n';
+
+      mockDb.query.mockImplementation((sql: string) => {
+        if (
+          sql.includes('SELECT') &&
+          sql.includes('FROM public.push_subscriptions')
+        ) {
+          return Promise.resolve({
+            rows: [
+              {
+                id: 'sub-fcm-1',
+                user_id: 'user-1',
+                endpoint: 'fcm:token-valid',
+                p256dh: 'fcm',
+                auth: 'fcm',
+              },
+              {
+                id: 'sub-fcm-2',
+                user_id: 'user-2',
+                endpoint: 'fcm:token-stale',
+                p256dh: 'fcm',
+                auth: 'fcm',
+              },
+            ],
+          });
+        }
+        return Promise.resolve({ rowCount: 1, rows: [] });
+      });
+
+      mockSendEachForMulticast.mockResolvedValue({
+        successCount: 1,
+        failureCount: 1,
+        responses: [
+          { success: true, messageId: 'msg-1' },
+          {
+            success: false,
+            error: {
+              code: 'messaging/registration-token-not-registered',
+            },
+          },
+        ],
+      });
+
+      await service.send(['user-1', 'user-2'], {
+        title: 'Vượt hạn mức chi tiêu',
+        body: 'Đi lại vượt hạn mức',
+        url: '/ledger-1/budgets',
+      });
+
+      expect(initializeApp).toHaveBeenCalledTimes(1);
+      expect(mockSendEachForMulticast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokens: ['token-valid', 'token-stale'],
+          notification: {
+            title: 'Vượt hạn mức chi tiêu',
+            body: 'Đi lại vượt hạn mức',
+          },
+          data: {
+            title: 'Vượt hạn mức chi tiêu',
+            body: 'Đi lại vượt hạn mức',
+            url: '/ledger-1/budgets',
+          },
+        }),
+      );
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'DELETE FROM public.push_subscriptions WHERE endpoint = $1',
+        ),
+        ['fcm:token-stale'],
       );
     });
   });

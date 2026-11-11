@@ -122,7 +122,7 @@ describe('AlertsService', () => {
     expect(mockPushService.send).not.toHaveBeenCalled();
   });
 
-  it('member-level breach notifies that member and admin only', async () => {
+  it('member-level breach notifies all active members in the ledger', async () => {
     mockDb.query.mockImplementation((sql: string) => {
       if (sql.includes('SELECT admin_id FROM public.ledgers')) {
         return Promise.resolve({ rows: [{ admin_id: 'admin-1' }] });
@@ -161,12 +161,12 @@ describe('AlertsService', () => {
 
     await service.evaluate('ledger-1', '2026-11-01', ['member-3']);
 
-    // Should notify admin-1 and member-3, but NOT member-2
+    // Should notify all active members: admin-1, member-2, and member-3
     expect(mockPushService.send).toHaveBeenCalled();
     const calledUserIds = mockPushService.send.mock.calls[0][0];
     expect(calledUserIds).toContain('admin-1');
+    expect(calledUserIds).toContain('member-2');
     expect(calledUserIds).toContain('member-3');
-    expect(calledUserIds).not.toContain('member-2');
   });
 
   it('uncategorised expense does not affect category budget', async () => {

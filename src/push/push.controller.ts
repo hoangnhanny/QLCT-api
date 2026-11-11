@@ -19,7 +19,10 @@ export class PushController {
 
   @Get('public-key')
   getPublicKey() {
-    return { publicKey: this.pushService.getPublicKey() };
+    return {
+      publicKey: this.pushService.getPublicKey(),
+      provider: this.pushService.isFirebaseEnabled() ? 'firebase' : 'vapid',
+    };
   }
 
   @Post('subscriptions')
@@ -28,7 +31,7 @@ export class PushController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: SubscribeDto,
   ) {
-    await this.pushService.subscribe(user.id, dto);
+    await this.pushService.subscribe(user.id, dto as any);
     return { ok: true };
   }
 
@@ -38,10 +41,11 @@ export class PushController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body?: UnsubscribeDto,
     @Query('endpoint') queryEndpoint?: string,
+    @Query('token') queryToken?: string,
   ) {
-    const endpoint = body?.endpoint ?? queryEndpoint;
-    if (endpoint) {
-      await this.pushService.unsubscribe(user.id, endpoint);
+    const target = body?.token ?? body?.endpoint ?? queryToken ?? queryEndpoint;
+    if (target) {
+      await this.pushService.unsubscribe(user.id, target);
     }
     return { ok: true };
   }

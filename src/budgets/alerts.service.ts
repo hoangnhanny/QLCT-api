@@ -144,9 +144,7 @@ export class AlertsService {
 
     if (this.legacyDb) {
       const params: any[] = [userId];
-      const conditions = [
-        `(b.member_user_id IS NULL OR b.member_user_id = $1 OR l.admin_id = $1)`,
-      ];
+      const conditions: string[] = [];
       if (options?.ledgerId) {
         params.push(options.ledgerId);
         conditions.push(`b.ledger_id = $${params.length}`);
@@ -155,6 +153,8 @@ export class AlertsService {
         params.push(normalizedMonth);
         conditions.push(`ba.month = $${params.length}`);
       }
+      const whereClause =
+        conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
       const res = await this.legacyDb.query(
         `SELECT
@@ -177,7 +177,7 @@ export class AlertsService {
         INNER JOIN public.members m ON m.ledger_id = l.id AND m.user_id = $1 AND m.status = 'active'
         LEFT JOIN public.categories c ON b.category_id = c.id
         LEFT JOIN public.profiles p ON b.member_user_id = p.user_id
-        WHERE ${conditions.join(' AND ')}
+        ${whereClause}
         ORDER BY ba.created_at DESC
         LIMIT 50`,
         params,
@@ -210,11 +210,7 @@ export class AlertsService {
           { userId },
         )
         .leftJoinAndSelect('b.category', 'c')
-        .leftJoinAndSelect('b.memberProfile', 'p')
-        .where(
-          '(b.member_user_id IS NULL OR b.member_user_id = :userId OR l.admin_id = :userId)',
-          { userId },
-        );
+        .leftJoinAndSelect('b.memberProfile', 'p');
 
       if (options?.ledgerId) {
         qb.andWhere('b.ledger_id = :ledgerId', { ledgerId: options.ledgerId });
@@ -385,12 +381,9 @@ export class AlertsService {
           );
 
           if (insertRes.rows.length > 0 && this.pushService) {
-            let recipients: string[];
-            if (budget.member_user_id) {
-              recipients = [...new Set([budget.member_user_id, adminId])];
-            } else {
-              recipients = activeMemberIds;
-            }
+            const recipients = [
+              ...new Set([...activeMemberIds, adminId].filter(Boolean)),
+            ];
 
             const targetName = budget.category_name
               ? `danh mục "${budget.category_name}"`
@@ -480,12 +473,9 @@ export class AlertsService {
           .execute();
 
         if (insertRes.raw?.length > 0 && this.pushService) {
-          let recipients: string[];
-          if (budget.memberUserId) {
-            recipients = [...new Set([budget.memberUserId, adminId])];
-          } else {
-            recipients = activeMemberIds;
-          }
+          const recipients = [
+            ...new Set([...activeMemberIds, adminId].filter(Boolean)),
+          ];
 
           const targetName = budget.category?.name
             ? `danh mục "${budget.category.name}"`

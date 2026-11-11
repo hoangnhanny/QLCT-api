@@ -56,7 +56,7 @@ describe('Push (e2e)', () => {
       .get('/push/public-key')
       .expect(200);
 
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       publicKey: 'test-vapid-public-key-value',
     });
   });

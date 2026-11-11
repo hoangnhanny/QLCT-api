@@ -1,0 +1,49 @@
+name: Keep Render API Alive
+
+on:
+  schedule:
+    # Ping every 10 minutes to prevent Render free-tier 15-minute idle spin-down
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-render-alive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Ping Render Health Endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /health endpoint
+        env:
+          API_HEALTH_URL: ${{ secrets.API_HEALTH_URL || vars.API_HEALTH_URL }}
+        run: |
+          if [ -z "$API_HEALTH_URL" ]; then
+            echo "Missing API_HEALTH_URL secret or variable (e.g. https://your-api.onrender.com/health)" >&2
+            exit 1
+          fi
+
+          # Normalize URL: append /health if only base URL was provided
+          TARGET_URL="${API_HEALTH_URL%/}"
+          case "$TARGET_URL" in
+            */health) ;;
+            *) TARGET_URL="${TARGET_URL}/health" ;;
+          esac
+
+          STATUS=$(curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 60 \
+            --retry 2 \
+            --retry-delay 5 \
+            --output /tmp/health-response.txt \
+            --write-out '%{http_code}' \
+            "$TARGET_URL")
+
+          echo "Pinged $TARGET_URL -> HTTP $STATUS ($(cat /tmp/health-response.txt))"

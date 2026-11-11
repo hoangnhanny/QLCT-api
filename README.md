@@ -36,8 +36,9 @@ supabase/         # Supabase CLI config and migrations
 - **CI**: Pull requests and pushes to `main` affecting API or Supabase files run type checking, lint, build, and unit tests without requiring a local Supabase instance.
 - **Migrations**: On a push to `main` (or manual dispatch), production migrations run automatically after CI build succeeds. Supabase CLI connects to remote and safely applies any pending migrations (idempotent).
 - **Render**: CI triggers deployment of the tested commit to Render only after migrations succeed. HTTP errors fail the deploy job; a successful trigger does not mean the Render deployment has finished.
+- **Keep-Alive**: `.github/workflows/keep-alive.yml` pings `/health` every 10 minutes (`*/10 * * * *`) and supports manual `workflow_dispatch` so the Render service stays warm.
 
-Configure these GitHub Actions repository secrets:
+Configure these GitHub Actions repository secrets (or variables for `API_HEALTH_URL`):
 
 | Secret                  | Purpose                                                        | Example / Default |
 | ----------------------- | -------------------------------------------------------------- | ----------------- |
@@ -46,6 +47,7 @@ Configure these GitHub Actions repository secrets:
 | `SUPABASE_DB_PASSWORD`  | Production database password                                   | Your DB password  |
 | `RENDER_API_KEY`        | Render API token                                               | Render account API key |
 | `RENDER_SERVICE_ID`     | Render backend service ID                                      | `srv-...`         |
+| `API_HEALTH_URL`        | Render API URL or `/health` endpoint for keep-alive cronjob    | `https://<app>.onrender.com/health` |
 
 Disable **Auto-Deploy** on Render so it cannot deploy before CI and migrations finish. Keep backend runtime secrets configured on Render, not in frontend environment files. Use backward-compatible migrations because the old backend remains live while migrations run, and add new migration files rather than editing migrations already applied to production.
 

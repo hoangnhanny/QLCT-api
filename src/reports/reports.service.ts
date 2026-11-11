@@ -179,6 +179,27 @@ export class ReportsService {
       total: Number(r.total),
     }));
 
+    // 4b. byPaymentMethod
+    const byPaymentRes = await this.executeQuery<{
+      payment_method: string | null;
+      total: string | number;
+    }>(
+      `SELECT
+        coalesce(e.payment_method, 'cash') as payment_method,
+        coalesce(sum(e.amount), 0) as total
+       FROM public.expenses e
+       WHERE ${filterConditions.join(' AND ')}
+       GROUP BY coalesce(e.payment_method, 'cash')
+       ORDER BY total DESC`,
+      filterParams,
+    );
+
+    const byPaymentMethod = byPaymentRes.rows.map((r) => ({
+      paymentMethod: (r.payment_method === 'transfer' ? 'transfer' : 'cash') as
+        'cash' | 'transfer',
+      total: Number(r.total),
+    }));
+
     // 5. budgets status
     const budgetsRes = await this.executeQuery<{
       id: string;
@@ -234,6 +255,7 @@ export class ReportsService {
       byCategory,
       byMember,
       byDay,
+      byPaymentMethod,
       budgets,
     };
   }

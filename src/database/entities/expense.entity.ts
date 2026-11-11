@@ -43,6 +43,9 @@ export class Expense {
   @Column({ type: 'text', default: 'expense' })
   type: 'expense' | 'income';
 
+  @Column({ name: 'payment_method', type: 'text', default: 'cash' })
+  paymentMethod: 'cash' | 'transfer';
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

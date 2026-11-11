@@ -1,5 +1,7 @@
 import { Expense as ExpenseEntity } from '../database/entities/expense.entity';
 
+export type PaymentMethod = 'cash' | 'transfer';
+
 export interface ExpenseCategory {
   id: string;
   name: string;
@@ -14,6 +16,8 @@ export interface ExpenseCreator {
 
 export interface ExpenseRow {
   type?: 'expense' | 'income';
+  payment_method?: PaymentMethod;
+  paymentMethod?: PaymentMethod;
   id: string;
   ledger_id?: string;
   ledgerId?: string;
@@ -42,6 +46,7 @@ export interface ExpenseRow {
 
 export interface Expense {
   type: 'expense' | 'income';
+  paymentMethod: PaymentMethod;
   id: string;
   ledgerId: string;
   createdBy: string;
@@ -96,8 +101,16 @@ export function mapExpense(row: ExpenseRow | ExpenseEntity): Expense {
     (row as any).creator_avatar_url ??
     null;
 
+  const rawPaymentMethod =
+    'paymentMethod' in row && row.paymentMethod
+      ? row.paymentMethod
+      : (row as any).payment_method;
+  const paymentMethod: PaymentMethod =
+    rawPaymentMethod === 'transfer' ? 'transfer' : 'cash';
+
   return {
     type: row.type ?? 'expense',
+    paymentMethod,
     id: row.id,
     ledgerId,
     createdBy,

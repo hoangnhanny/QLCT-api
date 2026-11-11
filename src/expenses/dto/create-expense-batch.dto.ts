@@ -19,6 +19,10 @@ export class CreateExpenseItemDto {
   @IsIn(['expense', 'income'])
   type?: 'expense' | 'income';
 
+  @IsOptional()
+  @IsIn(['cash', 'transfer'])
+  paymentMethod?: 'cash' | 'transfer';
+
   @IsInt()
   @Min(1)
   amount: number;

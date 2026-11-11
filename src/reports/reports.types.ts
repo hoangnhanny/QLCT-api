@@ -26,12 +26,18 @@ export interface MonthlyDaySummary {
   total: number;
 }
 
+export interface MonthlyPaymentMethodSummary {
+  paymentMethod: 'cash' | 'transfer';
+  total: number;
+}
+
 export interface MonthlyReport {
   income: number;
   total: number;
   byCategory: MonthlyCategorySummary[];
   byMember: MonthlyMemberSummary[];
   byDay: MonthlyDaySummary[];
+  byPaymentMethod?: MonthlyPaymentMethodSummary[];
   budgets: BudgetStatus[];
 }
 

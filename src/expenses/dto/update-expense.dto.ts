@@ -17,6 +17,10 @@ export class UpdateExpenseDto {
   type?: 'expense' | 'income';
 
   @IsOptional()
+  @IsIn(['cash', 'transfer'])
+  paymentMethod?: 'cash' | 'transfer';
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   amount?: number;

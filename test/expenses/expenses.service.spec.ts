@@ -380,5 +380,54 @@ describe('ExpensesService', () => {
       expect(params).toContain('cat-1');
       expect(params).toContain('user-1');
     });
+
+    it('filters by paymentMethod when provided', async () => {
+      mockDb.query.mockResolvedValue({ rows: [] });
+
+      await service.list('ledger-1', {
+        month: '2026-11',
+        paymentMethod: 'transfer',
+      });
+
+      const [sql, params] = mockDb.query.mock.calls[0];
+      expect(sql).toContain('e.payment_method =');
+      expect(params).toContain('transfer');
+    });
+  });
+
+  describe('createBatch paymentMethod', () => {
+    it('persists paymentMethod when provided and defaults to cash', async () => {
+      mockClient.query.mockImplementation((sql: string) => {
+        if (sql === 'BEGIN' || sql === 'COMMIT') return Promise.resolve();
+        if (sql.includes('INSERT INTO public.expenses')) {
+          return Promise.resolve({ rows: [{ id: 'exp-pm' }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+      mockDb.query.mockResolvedValue({
+        rows: [
+          {
+            id: 'exp-pm',
+            ledger_id: 'ledger-1',
+            created_by: 'user-1',
+            amount: 150000,
+            content: 'Siêu thị',
+            payment_method: 'transfer',
+            spent_at: new Date(),
+            created_at: new Date(),
+          },
+        ],
+      });
+
+      const result = await service.createBatch('ledger-1', 'user-1', [
+        { amount: 150000, content: 'Siêu thị', paymentMethod: 'transfer' },
+      ]);
+
+      expect(mockClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('payment_method'),
+        expect.arrayContaining(['transfer']),
+      );
+      expect(result[0].paymentMethod).toBe('transfer');
+    });
   });
 });

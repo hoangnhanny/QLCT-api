@@ -48,6 +48,14 @@ describe('ReportsService', () => {
             ],
           });
         }
+        if (sql.includes('GROUP BY coalesce(e.payment_method')) {
+          return Promise.resolve({
+            rows: [
+              { payment_method: 'transfer', total: '250000' },
+              { payment_method: 'cash', total: '100000' },
+            ],
+          });
+        }
         if (sql.includes('FROM public.budgets')) {
           return Promise.resolve({
             rows: [
@@ -80,6 +88,10 @@ describe('ReportsService', () => {
       expect(report.budgets).toHaveLength(1);
       expect(report.budgets[0].spent).toBe(350000);
       expect(report.budgets[0].percent).toBe(35);
+      expect(report.byPaymentMethod).toEqual([
+        { paymentMethod: 'transfer', total: 250000 },
+        { paymentMethod: 'cash', total: 100000 },
+      ]);
     });
 
     it("removed member's expenses still counted with their name", async () => {

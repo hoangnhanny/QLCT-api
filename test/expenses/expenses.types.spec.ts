@@ -23,6 +23,7 @@ describe('mapExpense', () => {
     const result = mapExpense(rawRow);
     expect(result).toEqual({
       type: 'expense',
+      paymentMethod: 'cash',
       id: 'e1',
       ledgerId: 'l1',
       createdBy: 'u1',
@@ -64,9 +65,24 @@ describe('mapExpense', () => {
 
     const result = mapExpense(rawRow);
     expect(result.amount).toBe(20000);
+    expect(result.paymentMethod).toBe('cash');
     expect(result.category).toBeNull();
     expect(result.imagePath).toBeNull();
     expect(result.creator?.displayName).toBeNull();
     expect(result.creator?.avatarUrl).toBeNull();
+  });
+
+  it('maps transfer paymentMethod when payment_method is transfer', () => {
+    const result = mapExpense({
+      id: 'e3',
+      ledger_id: 'l1',
+      created_by: 'u1',
+      amount: 120000,
+      content: 'Đổ xăng',
+      payment_method: 'transfer',
+      spent_at: '2026-11-05T06:00:00.000Z',
+      created_at: '2026-11-05T06:00:00.000Z',
+    });
+    expect(result.paymentMethod).toBe('transfer');
   });
 });

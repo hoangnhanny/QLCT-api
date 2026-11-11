@@ -112,8 +112,8 @@ export class ExpensesService {
         for (const item of items) {
           const spentAt = item.spentAt ? new Date(item.spentAt) : new Date();
           const insertRes = await client.query(
-            `INSERT INTO public.expenses (ledger_id, created_by, amount, content, category_id, image_path, spent_at, type)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO public.expenses (ledger_id, created_by, amount, content, category_id, image_path, spent_at, type, payment_method)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING id`,
             [
               ledgerId,
@@ -124,6 +124,7 @@ export class ExpensesService {
               item.imagePath ?? null,
               spentAt,
               item.type ?? 'expense',
+              item.paymentMethod ?? 'cash',
             ],
           );
           insertedIds.push(insertRes.rows[0].id);
@@ -135,6 +136,7 @@ export class ExpensesService {
           `SELECT
             e.id,
             e.type,
+            e.payment_method,
             e.ledger_id,
             e.created_by,
             e.amount,
@@ -239,6 +241,7 @@ export class ExpensesService {
           imagePath: item.imagePath ?? null,
           spentAt: item.spentAt ? new Date(item.spentAt) : new Date(),
           type: item.type ?? 'expense',
+          paymentMethod: item.paymentMethod ?? 'cash',
         }),
       );
 
@@ -287,6 +290,11 @@ export class ExpensesService {
         conditions.push(`e.type = $${params.length}`);
       }
 
+      if (filter?.paymentMethod) {
+        params.push(filter.paymentMethod);
+        conditions.push(`e.payment_method = $${params.length}`);
+      }
+
       if (filter?.from || filter?.to) {
         if (filter.from) {
           params.push(new Date(filter.from));
@@ -321,6 +329,7 @@ export class ExpensesService {
         SELECT
           e.id,
           e.type,
+          e.payment_method,
           e.ledger_id,
           e.created_by,
           e.amount,
@@ -351,6 +360,12 @@ export class ExpensesService {
 
     if (filter?.type) {
       qb.andWhere('e.type = :type', { type: filter.type });
+    }
+
+    if (filter?.paymentMethod) {
+      qb.andWhere('e.payment_method = :paymentMethod', {
+        paymentMethod: filter.paymentMethod,
+      });
     }
 
     if (filter?.from || filter?.to) {
@@ -393,6 +408,7 @@ export class ExpensesService {
         `SELECT
           e.id,
           e.type,
+          e.payment_method,
           e.ledger_id,
           e.created_by,
           e.amount,
@@ -497,6 +513,10 @@ export class ExpensesService {
         params.push(dto.type);
         updates.push(`type = $${params.length}`);
       }
+      if (dto.paymentMethod !== undefined) {
+        params.push(dto.paymentMethod);
+        updates.push(`payment_method = $${params.length}`);
+      }
       if (dto.amount !== undefined) {
         params.push(dto.amount);
         updates.push(`amount = $${params.length}`);
@@ -571,6 +591,8 @@ export class ExpensesService {
     }
 
     if (dto.type !== undefined) existing.type = dto.type;
+    if (dto.paymentMethod !== undefined)
+      existing.paymentMethod = dto.paymentMethod;
     if (dto.amount !== undefined) existing.amount = dto.amount;
     if (dto.content !== undefined) existing.content = dto.content.trim();
     if (dto.spentAt !== undefined) existing.spentAt = new Date(dto.spentAt);

@@ -6,6 +6,10 @@ export class ListExpensesDto {
   type?: 'expense' | 'income';
 
   @IsOptional()
+  @IsIn(['cash', 'transfer'])
+  paymentMethod?: 'cash' | 'transfer';
+
+  @IsOptional()
   @Matches(/^(\d{4}-\d{2})(-\d{2})?$/, {
     message: 'month must be in YYYY-MM or YYYY-MM-01 format',
   })

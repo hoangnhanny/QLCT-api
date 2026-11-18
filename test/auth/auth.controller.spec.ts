@@ -34,6 +34,7 @@ describe('AuthController', () => {
       avatarUrl: 'https://example.com/avatar.jpg',
       createdAt: mockProfile.created_at,
       updatedAt: null,
+      hasPassword: false,
     });
     expect(queryMock).toHaveBeenCalledWith(expect.any(String), [
       '123e4567-e89b-12d3-a456-426614174000',
@@ -54,7 +55,27 @@ describe('AuthController', () => {
       avatarUrl: null,
       createdAt: null,
       updatedAt: null,
+      hasPassword: false,
     });
+  });
+
+  it('getMe returns hasPassword true when CredentialsService reports a password', async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    const credentials = { hasPassword: jest.fn().mockResolvedValue(true) };
+    const withCredentials = new AuthController(
+      { db: { query: queryMock } } as unknown as SupabaseService,
+      undefined,
+      credentials as any,
+    );
+
+    const result = await withCredentials.getMe({
+      id: '123e4567-e89b-12d3-a456-426614174000',
+    });
+
+    expect(result.hasPassword).toBe(true);
+    expect(credentials.hasPassword).toHaveBeenCalledWith(
+      '123e4567-e89b-12d3-a456-426614174000',
+    );
   });
 
   it('registers user and saves to both auth.users and public.profiles tables', async () => {

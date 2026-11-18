@@ -79,6 +79,19 @@ describe('Credentials (e2e)', () => {
     expect(locked.body.message).toBe('AccountLocked');
   });
 
+  it('concurrent wrong passwords cannot bypass the lockout', async () => {
+    await register({
+      email: 'dung@gmail.com',
+      password: 'matkhau123',
+      displayName: 'Dũng',
+    }).expect(201);
+
+    await Promise.all(
+      Array.from({ length: 10 }, () => login('dung@gmail.com', 'sai-mat-khau')),
+    );
+    await login('dung@gmail.com', 'matkhau123').expect(423);
+  });
+
   it('Google registration with the same email merges into the credential account', async () => {
     const created = await register({
       email: 'binh@gmail.com',

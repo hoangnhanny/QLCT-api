@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import {
+  BCRYPT_COST,
   CredentialsService,
   LOCK_MINUTES,
   MAX_FAILED_ATTEMPTS,
@@ -138,8 +139,9 @@ describe('CredentialsService', () => {
   });
 
   describe('login', () => {
-    it('succeeds with normalized email and resets counters', async () => {
+    it('succeeds with normalized email and atomically resets counters', async () => {
       credRepo.findOne.mockResolvedValueOnce(credential({ failedAttempts: 3 }));
+      dataSource.query.mockResolvedValueOnce([{ user_id: USER_ID }]);
 
       const result = await service.login('  An@Gmail.com ', 'matkhau123');
 
@@ -152,10 +154,23 @@ describe('CredentialsService', () => {
         displayName: 'An',
         avatarUrl: null,
       });
-      expect(credRepo.update).toHaveBeenCalledWith(
-        { userId: USER_ID },
-        { failedAttempts: 0, lockedUntil: null },
-      );
+      const [sql, params] = dataSource.query.mock.calls[0];
+      expect(sql).toMatch(/with u as \(\s*update public\.user_credentials/i);
+      expect(sql).toMatch(/failed_attempts = 0/);
+      expect(sql).toMatch(/locked_until is null or locked_until <= now\(\)/);
+      expect(params).toEqual([USER_ID]);
+      expect(credRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 423 when a concurrent request locked the account before the correct password was confirmed', async () => {
+      credRepo.findOne.mockResolvedValueOnce(credential());
+      dataSource.query.mockResolvedValueOnce([]);
+
+      const error = await service
+        .login('an@gmail.com', 'matkhau123')
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error.getStatus()).toBe(423);
     });
 
     it('throws UnauthorizedException for unknown email', async () => {
@@ -166,27 +181,31 @@ describe('CredentialsService', () => {
       );
     });
 
-    it('increments failedAttempts on wrong password', async () => {
+    it('increments failedAttempts atomically in SQL on wrong password', async () => {
       credRepo.findOne.mockResolvedValueOnce(credential());
+      dataSource.query.mockResolvedValueOnce([
+        { failed_attempts: 1, locked_until: null },
+      ]);
 
       await expect(
         service.login('an@gmail.com', 'sai-mat-khau'),
       ).rejects.toEqual(
         new UnauthorizedException('Email hoặc mật khẩu không đúng'),
       );
-      expect(credRepo.update).toHaveBeenCalledWith(
-        { userId: USER_ID },
-        { failedAttempts: 1 },
-      );
+      const [sql, params] = dataSource.query.mock.calls[0];
+      expect(sql).toMatch(/failed_attempts \+ 1/);
+      expect(sql).toMatch(/locked_until is null or locked_until <= now\(\)/);
+      expect(params).toEqual([USER_ID, 5, 15]);
+      expect(credRepo.update).not.toHaveBeenCalled();
     });
 
-    it('locks for 15 minutes on the fifth wrong password', async () => {
-      const now = new Date('2026-11-18T10:00:00Z');
-      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
-      jest.setSystemTime(now);
+    it('locks in the same statement when the counter reaches 5 for 15 minutes', async () => {
       credRepo.findOne.mockResolvedValueOnce(
         credential({ failedAttempts: MAX_FAILED_ATTEMPTS - 1 }),
       );
+      dataSource.query.mockResolvedValueOnce([
+        { failed_attempts: 0, locked_until: new Date(Date.now() + 900_000) },
+      ]);
 
       await expect(
         service.login('an@gmail.com', 'sai-mat-khau'),
@@ -194,13 +213,20 @@ describe('CredentialsService', () => {
 
       expect(MAX_FAILED_ATTEMPTS).toBe(5);
       expect(LOCK_MINUTES).toBe(15);
-      expect(credRepo.update).toHaveBeenCalledWith(
-        { userId: USER_ID },
-        {
-          failedAttempts: 0,
-          lockedUntil: new Date(now.getTime() + 15 * 60 * 1000),
-        },
-      );
+      const [sql] = dataSource.query.mock.calls[0];
+      expect(sql).toMatch(/failed_attempts \+ 1 >= \$2/);
+      expect(sql).toMatch(/make_interval\(mins => \$3\)/);
+    });
+
+    it('returns 423 for a wrong password once a concurrent request has locked the account', async () => {
+      credRepo.findOne.mockResolvedValueOnce(credential());
+      dataSource.query.mockResolvedValueOnce([]);
+
+      const error = await service
+        .login('an@gmail.com', 'sai-mat-khau')
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error.getStatus()).toBe(423);
     });
 
     it('throws 423 AccountLocked while locked, even with the correct password', async () => {
@@ -220,6 +246,7 @@ describe('CredentialsService', () => {
       credRepo.findOne.mockResolvedValueOnce(
         credential({ lockedUntil: new Date(Date.now() - 60_000) }),
       );
+      dataSource.query.mockResolvedValueOnce([{ user_id: USER_ID }]);
 
       await expect(
         service.login('an@gmail.com', 'matkhau123'),
@@ -234,12 +261,15 @@ describe('CredentialsService', () => {
       ).rejects.toEqual(new BadRequestException('Tài khoản chưa có mật khẩu'));
     });
 
-    it('throws UnauthorizedException when the current password is wrong', async () => {
-      credRepo.findOne.mockResolvedValueOnce(credential());
+    it('throws 400 (not 401, which the web client treats as an expired session) when the current password is wrong', async () => {
+      credRepo.findOne.mockResolvedValue(credential());
 
       await expect(
         service.changePassword(USER_ID, 'sai-mat-khau', 'matkhaumoi1'),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.changePassword(USER_ID, 'sai-mat-khau', 'matkhaumoi1'),
+      ).rejects.toThrow('Mật khẩu hiện tại không đúng');
       expect(credRepo.update).not.toHaveBeenCalled();
     });
 
@@ -265,6 +295,10 @@ describe('CredentialsService', () => {
         true,
       );
     });
+  });
+
+  it('uses bcrypt cost 10 to bound CPU per unauthenticated request', () => {
+    expect(BCRYPT_COST).toBe(10);
   });
 
   describe('hasPassword', () => {

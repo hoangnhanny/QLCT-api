@@ -15,7 +15,7 @@ import { UserCredential } from '../database/entities/user-credential.entity';
 export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCK_MINUTES = 15;
 
-const BCRYPT_COST = 12;
+export const BCRYPT_COST = 10;
 const MAX_PASSWORD_BYTES = 72;
 const INVALID_CREDENTIALS = 'Email hoặc mật khẩu không đúng';
 const EMAIL_IN_USE = 'Email đã được sử dụng';
@@ -121,29 +121,43 @@ export class CredentialsService {
     }
 
     const valid = await bcrypt.compare(password, credential.passwordHash);
+
+    // Counter and lock are read-modify-written in one SQL statement so that
+    // concurrent attempts cannot all observe the same pre-lock counter. The
+    // `locked_until` guard also makes any attempt that finishes after another
+    // request locked the account report 423, even with the correct password.
     if (!valid) {
-      const attempts = credential.failedAttempts + 1;
-      if (attempts >= MAX_FAILED_ATTEMPTS) {
-        await this.credRepo.update(
-          { userId: credential.userId },
-          {
-            failedAttempts: 0,
-            lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60 * 1000),
-          },
-        );
-      } else {
-        await this.credRepo.update(
-          { userId: credential.userId },
-          { failedAttempts: attempts },
-        );
+      const rows = await this.dataSource.query(
+        `with u as (
+           update public.user_credentials
+           set failed_attempts = case when failed_attempts + 1 >= $2 then 0 else failed_attempts + 1 end,
+               locked_until = case when failed_attempts + 1 >= $2 then now() + make_interval(mins => $3) else locked_until end,
+               updated_at = now()
+           where user_id = $1 and (locked_until is null or locked_until <= now())
+           returning failed_attempts, locked_until
+         )
+         select * from u`,
+        [credential.userId, MAX_FAILED_ATTEMPTS, LOCK_MINUTES],
+      );
+      if (rows.length === 0) {
+        throw new HttpException('AccountLocked', 423);
       }
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
-    await this.credRepo.update(
-      { userId: credential.userId },
-      { failedAttempts: 0, lockedUntil: null },
+    const reset = await this.dataSource.query(
+      `with u as (
+         update public.user_credentials
+         set failed_attempts = 0, locked_until = null, updated_at = now()
+         where user_id = $1 and (locked_until is null or locked_until <= now())
+         returning user_id
+       )
+       select * from u`,
+      [credential.userId],
     );
+    if (reset.length === 0) {
+      throw new HttpException('AccountLocked', 423);
+    }
 
     const profile = await this.profileRepo.findOne({
       where: { userId: credential.userId },
@@ -170,7 +184,7 @@ export class CredentialsService {
       credential.passwordHash,
     );
     if (!valid) {
-      throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
+      throw new BadRequestException('Mật khẩu hiện tại không đúng');
     }
     assertPasswordLength(newPassword);
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);

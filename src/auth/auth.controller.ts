@@ -13,6 +13,7 @@ import { DataSource, Repository } from 'typeorm';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthGuard } from './auth.guard';
 import { AuthenticatedUser } from './authenticated-user';
+import { CredentialsService } from './credentials.service';
 import { CurrentUser } from './current-user.decorator';
 import { Profile as ProfileEntity } from '../database/entities/profile.entity';
 
@@ -48,6 +49,8 @@ export class AuthController {
     @InjectDataSource()
     @Optional()
     dataSource?: DataSource,
+    @Optional()
+    private readonly credentials?: CredentialsService,
   ) {
     if (profileRepoOrSupabase?.db) {
       this.legacyDb = profileRepoOrSupabase.db;
@@ -60,6 +63,9 @@ export class AuthController {
   @Get('me')
   @UseGuards(AuthGuard)
   async getMe(@CurrentUser() user: AuthenticatedUser) {
+    const hasPassword = this.credentials
+      ? await this.credentials.hasPassword(user.id)
+      : false;
     if (this.legacyDb) {
       const result = await this.legacyDb.query(
         `select user_id, email, display_name, avatar_url, created_at, updated_at
@@ -75,6 +81,7 @@ export class AuthController {
         avatarUrl: profile?.avatar_url ?? null,
         createdAt: profile?.created_at ?? null,
         updatedAt: profile?.updated_at ?? null,
+        hasPassword,
       };
     }
 
@@ -88,6 +95,7 @@ export class AuthController {
       avatarUrl: profile?.avatarUrl ?? null,
       createdAt: profile?.createdAt ?? null,
       updatedAt: profile?.updatedAt ?? null,
+      hasPassword,
     };
   }
 

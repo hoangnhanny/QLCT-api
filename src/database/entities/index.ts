@@ -9,6 +9,7 @@ import { Invite } from './invite.entity';
 import { PushSubscription } from './push-subscription.entity';
 import { SavingsGoal } from './savings-goal.entity';
 import { SavingsEntry } from './savings-entry.entity';
+import { UserCredential } from './user-credential.entity';
 
 export * from './transformers';
 export * from './profile.entity';
@@ -22,6 +23,7 @@ export * from './invite.entity';
 export * from './push-subscription.entity';
 export * from './savings-goal.entity';
 export * from './savings-entry.entity';
+export * from './user-credential.entity';
 
 export const ALL_ENTITIES = [
   Profile,
@@ -35,4 +37,5 @@ export const ALL_ENTITIES = [
   PushSubscription,
   SavingsGoal,
   SavingsEntry,
+  UserCredential,
 ];
